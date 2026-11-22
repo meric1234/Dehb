@@ -388,7 +388,6 @@
 <input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
 
 <script>
-/* Eski Service Worker ve Cache Storage önbelleğini temizle */
 (function clearStaleCacheOnce() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(regs => {
@@ -449,12 +448,13 @@ function prettifyMathText(raw) {
   let out = raw;
   out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
   out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
-  out = out.replace(/(\s)\$(\s|$)/g, '$1$2');
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 window.prettifyMathText = prettifyMathText;
 
 document.addEventListener('DOMContentLoaded', () => {
+  const appNs = window.ON || (window.ON = {});
+
   const isTextEditable = el => {
     if (!el || typeof el.closest !== 'function') return false;
     return !!el.closest('input, textarea, [contenteditable], #worldTop [contenteditable], #worldTop textarea, #worldTop input, .txt-box, .text-box, .note-txt, .snote-b, .card-txt');
@@ -505,22 +505,13 @@ document.addEventListener('DOMContentLoaded', () => {
     el.style.webkitUserSelect = 'text';
     el.style.webkitTouchCallout = 'default';
 
-    ['pointerdown', 'touchstart', 'touchend', 'contextmenu', 'selectstart'].forEach(evt => {
-      el.addEventListener(evt, e => {
-        e.stopPropagation();
-      }, { passive: evt === 'touchstart' || evt === 'touchend' });
+    el.addEventListener('contextmenu', e => {
+      e.stopPropagation();
     });
 
     el.addEventListener('paste', e => {
       e.stopPropagation();
-      let clip = e.clipboardData?.getData('text/plain') || '';
-      if (!clip && navigator.clipboard?.readText) {
-        e.preventDefault();
-        navigator.clipboard.readText().then(t => {
-          if (t) insertTextIntoEditable(el, prettifyMathText(t));
-        }).catch(() => {});
-        return;
-      }
+      const clip = e.clipboardData?.getData('text/plain');
       if (!clip) return;
       const clean = prettifyMathText(clip);
       if (clean !== clip) {
@@ -582,31 +573,31 @@ document.addEventListener('DOMContentLoaded', () => {
       if (txt) {
         keyIn.value = txt;
         keyIn.dispatchEvent(new Event('input', { bubbles: true }));
-        window.ON?.app?.toast?.('API anahtarı yapıştırıldı');
+        appNs.app?.toast?.('API anahtarı yapıştırıldı');
       } else {
-        window.ON?.app?.toast?.('Panoda kopyalanmış metin yok');
+        appNs.app?.toast?.('Panoda kopyalanmış metin yok');
       }
     } catch {
       keyIn.focus();
       keyIn.select();
-      window.ON?.app?.toast?.('Kutunun içine basılı tutup Yapıştır seçin');
+      appNs.app?.toast?.('Kutunun içine basılı tutup Yapıştır seçin');
     }
   });
 
   keyCopyBtn?.addEventListener('click', async () => {
     const val = keyIn.value.trim();
     if (!val) {
-      window.ON?.app?.toast?.('Kopyalanacak anahtar yok');
+      appNs.app?.toast?.('Kopyalanacak anahtar yok');
       return;
     }
     try {
       await navigator.clipboard.writeText(val);
-      window.ON?.app?.toast?.('API anahtarı panoya kopyalandı');
+      appNs.app?.toast?.('API anahtarı panoya kopyalandı');
     } catch {
       keyIn.focus();
       keyIn.select();
       document.execCommand('copy');
-      window.ON?.app?.toast?.('API anahtarı panoya kopyalandı');
+      appNs.app?.toast?.('API anahtarı panoya kopyalandı');
     }
   });
 
@@ -787,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
       synthNodes.push(lp);
 
       const triggerJazzBar = () => {
-        if (!synthGain || audioCtx.state === 'closed') return;
+        if (!synthGain || !audioCtx || audioCtx.state === 'closed') return;
         const bar = progression[step % progression.length];
         step++;
         const now = audioCtx.currentTime;
@@ -984,14 +975,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!mp3Pop.hidden && !mp3Pop.contains(e.target) && !mp3Btn.contains(e.target)) mp3Pop.hidden = true;
   });
 
-  const ON = window.ON || (window.ON = {});
   const spenSel = document.getElementById('spenAction');
   const spenBadge = document.getElementById('spenTestBadge');
 
-  const getSpenAct = () => localStorage.getItem('on-spen-action') || ON.settings?.spenAction || 'eraser-hold';
+  const getSpenAct = () => localStorage.getItem('on-spen-action') || appNs.settings?.spenAction || 'eraser-hold';
   const setSpenAct = val => {
     try { localStorage.setItem('on-spen-action', val); } catch {}
-    if (ON.settings) { ON.settings.spenAction = val; ON.saveSettings?.(); }
+    if (appNs.settings) { appNs.settings.spenAction = val; appNs.saveSettings?.(); }
   };
   spenSel.value = getSpenAct();
 
@@ -1000,7 +990,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   spenSel.addEventListener('change', () => {
     setSpenAct(spenSel.value);
-    ON.app?.toast?.('S Pen tuş görevi kaydedildi');
+    appNs.app?.toast?.('S Pen tuş görevi kaydedildi');
   });
   document.getElementById('setForm')?.addEventListener('submit', () => setSpenAct(spenSel.value));
 
@@ -1038,7 +1028,7 @@ document.addEventListener('DOMContentLoaded', () => {
         switchTool(activeTool() === 'highlighter' ? 'pen' : 'highlighter');
       } else if (act === 'undo') {
         document.getElementById('undo')?.click();
-        ON.app?.toast?.('Geri alındı (S Pen)');
+        appNs.app?.toast?.('Geri alındı (S Pen)');
       } else if (act === 'ai') {
         document.getElementById('aiOpen')?.click();
       }
