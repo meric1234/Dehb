@@ -35,8 +35,11 @@
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #mp3Pop { width: 296px; }
+  #mp3Pop { width: 306px; }
   #mp3Pop .mp3-track { font-size: 12px; opacity: .85; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mp3Pop .mp3-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0 8px; }
+  #mp3Pop .mp3-presets .btn { font-size: 11px; padding: 5px 7px; justify-content: flex-start; text-align: left; }
+  #mp3Pop .mp3-presets .btn.active-snd { background: rgba(59, 130, 246, 0.22); border-color: #3b82f6; color: #93c5fd; }
   #mp3Pop .mp3-seek-box { margin: 8px 0; }
   #mp3Pop .mp3-seek-row { display: flex; align-items: center; gap: 6px; }
   #mp3Pop .mp3-seek-row input[type="range"] { flex: 1; accent-color: #3b82f6; }
@@ -46,16 +49,20 @@
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
   #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
 
-  /* Tüm metin girişleri ve düzenlenebilir yazı alanlarında parmakla basılı tutunca Kopyala/Yapıştır menüsünü aç */
+  /* Tüm metin girişleri ve tuvaldeki metin kutularında parmakla basılı tutunca Kopyala/Yapıştır menüsünü aç */
   input,
   textarea,
   [contenteditable],
   [contenteditable="true"],
   [contenteditable="plaintext-only"],
+  #worldTop [contenteditable],
+  #worldTop textarea,
+  #worldTop input,
   .txt-box,
   .text-box,
   .note-txt,
-  .snote-b {
+  .snote-b,
+  .card-txt {
     user-select: text !important;
     -webkit-user-select: text !important;
     -webkit-touch-callout: default !important;
@@ -137,7 +144,7 @@
       <input id="title" aria-label="Defter başlığı" value="Odak Not" autocomplete="off">
       <span id="saved" aria-live="polite">Kaydedildi</span>
       <button class="ico timer" id="timerBtn" title="Odak sayacı (sessiz)"><span data-icon="timer"></span><b id="timerTxt"></b></button>
-      <button class="ico" id="mp3Btn" title="Odak müziği / MP3 ekle" aria-label="MP3 Ekle">
+      <button class="ico" id="mp3Btn" title="Odak müziği / MP3 & DEHB sesleri" aria-label="Odak Sesi">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
         <span id="mp3Name" hidden></span>
       </button>
@@ -347,12 +354,19 @@
 </div>
 
 <div class="pop" id="mp3Pop" data-ui hidden>
-  <div class="lbl">Odak müziği (MP3)</div>
+  <div class="lbl">Odak müziği &amp; DEHB sesleri</div>
   <div class="mp3-track" id="mp3Track">Dosya seçilmedi</div>
   <div class="row">
     <button type="button" class="btn pri" id="mp3Pick">+ MP3 Seç</button>
     <button type="button" class="btn" id="mp3Play" disabled>Oynat</button>
     <button type="button" class="btn" id="mp3Next" hidden>Sonraki</button>
+  </div>
+  <div class="lbl" style="margin-top:8px;">DEHB Odak Sesleri</div>
+  <div class="mp3-presets" id="adhdPresets">
+    <button type="button" class="btn" data-snd="brown">🧠 Brown Noise</button>
+    <button type="button" class="btn" data-snd="pink">🌧️ Pink Noise</button>
+    <button type="button" class="btn" data-snd="gamma40">⚡ 40Hz Binaural</button>
+    <button type="button" class="btn" data-snd="cafe">☕ Kafe / Kütüphane</button>
   </div>
   <div class="mp3-seek-box">
     <div class="mp3-seek-row">
@@ -385,11 +399,63 @@ if ('serviceWorker' in navigator) {
   }).catch(() => {});
 }
 
+/* ================= Estetik Metin / Formül Temizleyici ($ Kaldırma) ================= */
+function prettifyMathText(raw) {
+  if (!raw || typeof raw !== 'string') return raw || '';
+  const supMap = { '0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','+':'⁺','-':'⁻','=':'⁼','(':'⁽',')':'⁾','n':'ⁿ','i':'ⁱ','k':'ᵏ','x':'ˣ','y':'ʸ','t':'ᵗ' };
+  const subMap = { '0':'₀','1':'₁','2':'₂','3':'₃','4':'₄','5':'₅','6':'₆','7':'₇','8':'₈','9':'₉','+':'₊','-':'₋','=':'₌','(':'₍',')':'₎','a':'ₐ','e':'ₑ','i':'ᵢ','o':'ₒ','n':'ₙ','m':'ₘ','k':'ₖ' };
+  const toSup = s => [...s].map(ch => supMap[ch] || ('^' + ch)).join('');
+  const toSub = s => [...s].map(ch => subMap[ch] || ('_' + ch)).join('');
+
+  const convertExpr = expr => {
+    let t = expr.trim();
+    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, '$1$2$3');
+    t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+    t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
+    t = t.replace(/\\left|\\right/g, '');
+    t = t.replace(/\\times|\\cdot/g, '×');
+    t = t.replace(/\\div/g, '÷');
+    t = t.replace(/\\pm/g, '±');
+    t = t.replace(/\\mp/g, '∓');
+    t = t.replace(/\\approx/g, '≈');
+    t = t.replace(/\\neq|\\ne/g, '≠');
+    t = t.replace(/\\leq|\\le/g, '≤');
+    t = t.replace(/\\geq|\\ge/g, '≥');
+    t = t.replace(/\\rightarrow|\\to/g, '→');
+    t = t.replace(/\\Rightarrow/g, '⇒');
+    t = t.replace(/\\infty/g, '∞');
+    t = t.replace(/\\sum/g, '∑');
+    t = t.replace(/\\int/g, '∫');
+    t = t.replace(/\\prod/g, '∏');
+    t = t.replace(/\\partial/g, '∂');
+    t = t.replace(/\\nabla/g, '∇');
+    t = t.replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\gamma/g, 'γ').replace(/\\delta/g, 'δ');
+    t = t.replace(/\\Delta/g, 'Δ').replace(/\\Theta/g, 'Θ').replace(/\\theta/g, 'θ').replace(/\\lambda/g, 'λ');
+    t = t.replace(/\\mu/g, 'μ').replace(/\\pi/g, 'π').replace(/\\rho/g, 'ρ').replace(/\\sigma/g, 'σ').replace(/\\Sigma/g, 'Σ');
+    t = t.replace(/\\tau/g, 'τ').replace(/\\phi/g, 'φ').replace(/\\Phi/g, 'Φ').replace(/\\omega/g, 'ω').replace(/\\Omega/g, 'Ω');
+    t = t.replace(/\^\{([^{}]+)\}/g, (_, g) => toSup(g));
+    t = t.replace(/\^([0-9a-zA-Z+-])/g, (_, g) => toSup(g));
+    t = t.replace(/_\{([^{}]+)\}/g, (_, g) => toSub(g));
+    t = t.replace(/_([0-9a-zA-Z+-])/g, (_, g) => toSub(g));
+    t = t.replace(/[{}]/g, '');
+    return t.replace(/\s{2,}/g, ' ').trim();
+  };
+
+  let out = raw;
+  // Blok $$...$$ ve satır içi $...$ ifadelerini estetik formata çevir
+  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
+  out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
+  // Kenarda kalmış tekil $ işaretlerini temizle (para birimi gibi olmayan formül artıklarını)
+  out = out.replace(/(\s)\$(\s|$)/g, '$1$2');
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+window.prettifyMathText = prettifyMathText;
+
 document.addEventListener('DOMContentLoaded', () => {
-  /* 0. Tüm Yazı Alanlarında Kopyala/Yapıştır ve Yerel Baloncuk Koruması */
+  /* 0. Tüm Yazı Alanlarında Kopyala/Yapıştır ve Estetik Yapıştırma */
   const isTextEditable = el => {
     if (!el || typeof el.closest !== 'function') return false;
-    return !!el.closest('input, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], .txt-box, .text-box, .note-txt');
+    return !!el.closest('input, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], #worldTop [contenteditable], #worldTop textarea, #worldTop input, .txt-box, .text-box, .note-txt, .snote-b, .card-txt');
   };
 
   ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'contextmenu', 'selectstart'].forEach(evt => {
@@ -399,6 +465,77 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, { capture: true });
   });
+
+  // Yapıştırma sırasında formül yanındaki $ işaretlerini otomatik temizle ve estetik hale getir
+  document.addEventListener('paste', e => {
+    const target = e.target;
+    if (!isTextEditable(target)) return;
+    const clip = e.clipboardData?.getData('text/plain');
+    if (!clip || (!clip.includes('$') && !clip.includes('\\'))) return;
+    const clean = prettifyMathText(clip);
+    if (clean === clip) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
+      const start = target.selectionStart ?? target.value.length;
+      const end = target.selectionEnd ?? target.value.length;
+      target.value = target.value.slice(0, start) + clean + target.value.slice(end);
+      target.selectionStart = target.selectionEnd = start + clean.length;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+    } else if (target.isContentEditable || target.closest('[contenteditable]')) {
+      const ed = target.isContentEditable ? target : target.closest('[contenteditable]');
+      ed.focus();
+      if (document.queryCommandSupported?.('insertText')) {
+        document.execCommand('insertText', false, clean);
+      } else {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount) {
+          sel.deleteFromDocument();
+          sel.getRangeAt(0).insertNode(document.createTextNode(clean));
+        }
+      }
+      ed.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }, { capture: true });
+
+  // Asistan çıktısını panoya kopyalarken veya tuvale sabitlerken $ işaretlerini temizle
+  const outEl = document.getElementById('out');
+  document.getElementById('copyOut')?.addEventListener('click', () => {
+    const txt = outEl?.innerText || outEl?.textContent || '';
+    if (!txt.trim()) return;
+    const clean = prettifyMathText(txt);
+    navigator.clipboard?.writeText(clean).catch(() => {});
+  }, { capture: true });
+
+  // Tuvale sabitlenen kartlardaki $ işaretlerini otomatik temizleyen gözlemci
+  const worldTop = document.getElementById('worldTop');
+  if (worldTop) {
+    const cleanNodeText = root => {
+      if (!root) return;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times'))) {
+          const cleaned = prettifyMathText(node.nodeValue);
+          if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
+        }
+      }
+    };
+    new MutationObserver(muts => {
+      muts.forEach(m => m.addedNodes.forEach(n => {
+        if (n.nodeType === 1) {
+          cleanNodeText(n);
+          n.querySelectorAll?.('[contenteditable], textarea, input').forEach(ctrl => {
+            ctrl.setAttribute('contenteditable', ctrl.hasAttribute('contenteditable') ? 'true' : ctrl.getAttribute('contenteditable') || '');
+            ctrl.style.userSelect = 'text';
+            ctrl.style.webkitUserSelect = 'text';
+            ctrl.style.webkitTouchCallout = 'default';
+          });
+        }
+      }));
+    }).observe(worldTop, { childList: true, subtree: true });
+  }
 
   const keyIn = document.getElementById('keyIn');
   const keyPasteBtn = document.getElementById('keyPasteBtn');
@@ -459,7 +596,7 @@ document.addEventListener('DOMContentLoaded', () => {
   hideBottomTimerBar();
   setTimeout(hideBottomTimerBar, 300);
 
-  /* 2. Üst bar MP3 oynatıcı (zaman çubuğu + -10s / +10s ileri geri alma) */
+  /* 2. Üst bar MP3 oynatıcı + DEHB Odak Sesleri + İleri/Geri Alma */
   const mp3Btn = document.getElementById('mp3Btn');
   const mp3Pop = document.getElementById('mp3Pop');
   const mp3In = document.getElementById('mp3In');
@@ -475,12 +612,136 @@ document.addEventListener('DOMContentLoaded', () => {
   const mp3Vol = document.getElementById('mp3Vol');
   const mp3Track = document.getElementById('mp3Track');
   const mp3Name = document.getElementById('mp3Name');
+  const presetBox = document.getElementById('adhdPresets');
 
   const audio = new Audio();
   let tracks = [], idx = 0, loop = true, seeking = false;
+  let audioCtx = null, synthGain = null, synthNodes = [], activePreset = null;
+
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
-  audio.volume = Number.isFinite(savedVol) ? savedVol : 0.6;
-  mp3Vol.value = String(audio.volume);
+  const volVal = Number.isFinite(savedVol) ? savedVol : 0.6;
+  audio.volume = volVal;
+  mp3Vol.value = String(volVal);
+
+  const presetLabels = {
+    brown: 'Brown Noise (Derin Odak)',
+    pink: 'Pink Noise (Yumuşak Yağmur)',
+    gamma40: '40Hz Binaural (Gamma Odak)',
+    cafe: 'Kafe / Kütüphane Uğultusu'
+  };
+
+  const stopSynth = () => {
+    synthNodes.forEach(n => {
+      try { n.stop?.(); } catch {}
+      try { n.disconnect?.(); } catch {}
+    });
+    synthNodes = [];
+    if (synthGain) {
+      try { synthGain.disconnect(); } catch {}
+      synthGain = null;
+    }
+    activePreset = null;
+    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
+  };
+
+  const startSynth = type => {
+    stopSynth();
+    audio.pause();
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+
+    synthGain = audioCtx.createGain();
+    synthGain.gain.value = (parseFloat(mp3Vol.value) || 0.6) * 0.35;
+    synthGain.connect(audioCtx.destination);
+
+    const sr = audioCtx.sampleRate;
+    const len = sr * 4;
+
+    if (type === 'brown' || type === 'pink' || type === 'cafe') {
+      const buf = audioCtx.createBuffer(2, len, sr);
+      for (let ch = 0; ch < 2; ch++) {
+        const data = buf.getChannelData(ch);
+        if (type === 'brown') {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            data[i] = (last + 0.02 * w) / 1.02;
+            last = data[i];
+            data[i] *= 2.4;
+          }
+        } else if (type === 'pink') {
+          let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            b0 = 0.99886 * b0 + w * 0.0555179;
+            b1 = 0.99332 * b1 + w * 0.0750759;
+            b2 = 0.96900 * b2 + w * 0.1538520;
+            b3 = 0.86650 * b3 + w * 0.3104856;
+            b4 = 0.55000 * b4 + w * 0.5329522;
+            b5 = -0.7616 * b5 - w * 0.0168980;
+            data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.08;
+            b6 = w * 0.115926;
+          }
+        } else {
+          // Kafe / Kütüphane: yumuşak düşük-orta bant gürültüsü + hafif mırıltı modülasyonu
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            last = (last + 0.06 * w) / 1.06;
+            const mod = 0.78 + 0.22 * Math.sin((2 * Math.PI * i) / (sr * 3.7));
+            data[i] = last * 1.6 * mod;
+          }
+        }
+      }
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+
+      if (type === 'cafe') {
+        const bp = audioCtx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 420;
+        bp.Q.value = 0.65;
+        src.connect(bp);
+        bp.connect(synthGain);
+        synthNodes.push(bp);
+      } else {
+        src.connect(synthGain);
+      }
+      src.start();
+      synthNodes.push(src);
+    } else if (type === 'gamma40') {
+      // 40Hz Binaural (Sol 200Hz, Sağ 240Hz)
+      const merger = audioCtx.createChannelMerger(2);
+      const oscL = audioCtx.createOscillator();
+      const oscR = audioCtx.createOscillator();
+      oscL.type = 'sine';
+      oscR.type = 'sine';
+      oscL.frequency.value = 200;
+      oscR.frequency.value = 240;
+
+      const gL = audioCtx.createGain();
+      const gR = audioCtx.createGain();
+      gL.gain.value = 0.45;
+      gR.gain.value = 0.45;
+
+      oscL.connect(gL);
+      oscR.connect(gR);
+      gL.connect(merger, 0, 0);
+      gR.connect(merger, 0, 1);
+      merger.connect(synthGain);
+
+      oscL.start();
+      oscR.start();
+      synthNodes.push(oscL, oscR, gL, gR, merger);
+    }
+
+    activePreset = type;
+    presetBox?.querySelector(`[data-snd="${type}"]`)?.classList.add('active-snd');
+    syncMp3();
+  };
 
   const fmtTime = sec => {
     if (!Number.isFinite(sec) || sec < 0) return '00:00';
@@ -490,8 +751,8 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const syncSeekUI = () => {
-    const hasTrack = !!tracks[idx];
-    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const hasTrack = !activePreset && !!tracks[idx];
+    const dur = hasTrack && Number.isFinite(audio.duration) ? audio.duration : 0;
     mp3Rew.disabled = !hasTrack;
     mp3Fwd.disabled = !hasTrack;
     mp3Seek.disabled = !hasTrack || dur <= 0;
@@ -501,8 +762,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (!seeking) {
       mp3Seek.value = '0';
     }
-    mp3CurTime.textContent = fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime);
-    mp3DurTime.textContent = fmtTime(dur);
+    mp3CurTime.textContent = hasTrack ? fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime) : (activePreset ? '∞' : '00:00');
+    mp3DurTime.textContent = hasTrack ? fmtTime(dur) : (activePreset ? 'DEHB' : '00:00');
   };
 
   const seekTo = sec => {
@@ -515,13 +776,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const syncMp3 = () => {
     const cur = tracks[idx];
-    const playing = !audio.paused && !!cur;
+    const playing = activePreset ? true : (!audio.paused && !!cur);
     mp3Btn.classList.toggle('playing', playing);
-    mp3Track.textContent = cur ? cur.name : 'Dosya seçilmedi';
-    mp3Name.hidden = !cur;
-    mp3Name.textContent = cur ? cur.name.replace(/\.[^.]+$/, '') : '';
-    mp3Play.disabled = !cur;
-    mp3Play.textContent = playing ? 'Duraklat' : 'Oynat';
+
+    if (activePreset) {
+      mp3Track.textContent = presetLabels[activePreset] || activePreset;
+      mp3Name.hidden = false;
+      mp3Name.textContent = 'DEHB';
+      mp3Play.disabled = false;
+      mp3Play.textContent = 'Durdur';
+    } else {
+      mp3Track.textContent = cur ? cur.name : 'Dosya seçilmedi';
+      mp3Name.hidden = !cur;
+      mp3Name.textContent = cur ? cur.name.replace(/\.[^.]+$/, '') : '';
+      mp3Play.disabled = !cur;
+      mp3Play.textContent = (!audio.paused && !!cur) ? 'Duraklat' : 'Oynat';
+    }
+
     mp3Next.hidden = tracks.length <= 1;
     mp3Loop.textContent = loop ? 'Döngü: Açık' : 'Döngü: Kapalı';
     syncSeekUI();
@@ -529,6 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const playTrack = (i, auto = true) => {
     if (!tracks.length) return;
+    stopSynth();
     idx = (i + tracks.length) % tracks.length;
     audio.src = tracks[idx].url;
     audio.loop = loop && tracks.length === 1;
@@ -539,11 +811,23 @@ document.addEventListener('DOMContentLoaded', () => {
     syncMp3();
   };
 
+  presetBox?.querySelectorAll('[data-snd]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const snd = btn.dataset.snd;
+      if (activePreset === snd) {
+        stopSynth();
+        syncMp3();
+      } else {
+        startSynth(snd);
+      }
+    });
+  });
+
   mp3Btn.addEventListener('click', e => {
     e.stopPropagation();
     const r = mp3Btn.getBoundingClientRect();
     mp3Pop.style.top = (r.bottom + 8) + 'px';
-    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
+    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 318)) + 'px';
     const open = mp3Pop.hidden;
     document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
     mp3Pop.hidden = !open;
@@ -560,17 +844,22 @@ document.addEventListener('DOMContentLoaded', () => {
     mp3In.value = '';
   });
   mp3Play.addEventListener('click', () => {
+    if (activePreset) {
+      stopSynth();
+      syncMp3();
+      return;
+    }
     if (!tracks.length) return;
     audio.paused ? audio.play().catch(() => {}) : audio.pause();
     syncMp3();
   });
   mp3Next.addEventListener('click', () => playTrack(idx + 1, true));
   mp3Rew.addEventListener('click', () => {
-    if (!tracks.length) return;
+    if (!tracks.length || activePreset) return;
     seekTo((audio.currentTime || 0) - 10);
   });
   mp3Fwd.addEventListener('click', () => {
-    if (!tracks.length) return;
+    if (!tracks.length || activePreset) return;
     seekTo((audio.currentTime || 0) + 10);
   });
   mp3Seek.addEventListener('pointerdown', () => { seeking = true; });
@@ -589,8 +878,10 @@ document.addEventListener('DOMContentLoaded', () => {
     syncMp3();
   });
   mp3Vol.addEventListener('input', () => {
-    audio.volume = parseFloat(mp3Vol.value) || 0;
-    try { localStorage.setItem('on-mp3-vol', String(audio.volume)); } catch {}
+    const v = parseFloat(mp3Vol.value) || 0;
+    audio.volume = v;
+    if (synthGain) synthGain.gain.value = v * 0.35;
+    try { localStorage.setItem('on-mp3-vol', String(v)); } catch {}
   });
   audio.addEventListener('loadedmetadata', syncSeekUI);
   audio.addEventListener('durationchange', syncSeekUI);
