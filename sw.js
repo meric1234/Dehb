@@ -2,9 +2,10 @@
 // Uygulama kabuğunu ve CDN kütüphanelerini önbelleğe alır: ilk açılıştan sonra internetsiz çalışır.
 // Gemini (generativelanguage.googleapis.com) isteklerine ASLA dokunmaz.
 // Yeni sürüm yayınlarken VERSION değerini artırın.
-const VERSION = 'odak-not-v4';
+const VERSION = 'odak-not-v5';
 const SHELL = [
-  './', './index.html', './style.css', './storage.js', './canvas-tools.js', './pdf-engine.js', './ai-study.js', './app.js',
+  './', './index.html', './style.css', './focus-studio.css',
+  './storage.js', './canvas-tools.js', './pdf-engine.js', './ai-study.js', './app.js', './focus-studio.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon.png'
 ];
 const CDN = [
