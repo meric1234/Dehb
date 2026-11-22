@@ -366,8 +366,8 @@
     <button type="button" class="btn" data-snd="brown">🧠 Brown Noise</button>
     <button type="button" class="btn" data-snd="pink">🌧️ Pink Noise</button>
     <button type="button" class="btn" data-snd="gamma40">⚡ 40Hz Binaural</button>
-    <button type="button" class="btn" data-snd="cafe">☕ Kafe / Kütüphane</button>
-    <button type="button" class="btn" data-snd="lofi">🎹 Sakin Lo-Fi Akor</button>
+    <button type="button" class="btn" data-snd="cafe">☕ Kafe Ortamı</button>
+    <button type="button" class="btn" data-snd="jazz">🎷 Jazz Müzik</button>
     <button type="button" class="btn" data-snd="theta">🌊 6Hz Theta Odak</button>
   </div>
   <div class="mp3-seek-box">
@@ -626,8 +626,8 @@ document.addEventListener('DOMContentLoaded', () => {
     brown: 'Brown Noise (Derin Odak)',
     pink: 'Pink Noise (Yumuşak Yağmur)',
     gamma40: '40Hz Binaural (Gamma Odak)',
-    cafe: 'Kafe / Kütüphane Uğultusu',
-    lofi: 'Sakin Lo-Fi Akor Döngüsü',
+    cafe: 'Kafe Ortamı',
+    jazz: 'Jazz Müzik (Sıcak Akor & Bas)',
     theta: '6Hz Theta Odak Dalgaları'
   };
 
@@ -687,12 +687,14 @@ document.addEventListener('DOMContentLoaded', () => {
             b6 = w * 0.115926;
           }
         } else {
+          // Kafe Ortamı: yumuşak mekan uğultusu + hafif mırıltı ve seyrek fincan/çatal tınısı
           let last = 0;
           for (let i = 0; i < len; i++) {
             const w = Math.random() * 2 - 1;
-            last = (last + 0.06 * w) / 1.06;
-            const mod = 0.78 + 0.22 * Math.sin((2 * Math.PI * i) / (sr * 3.7));
-            data[i] = last * 1.6 * mod;
+            last = (last + 0.065 * w) / 1.065;
+            const chatter = 0.8 + 0.2 * Math.sin((2 * Math.PI * i) / (sr * 3.2));
+            const clink = (Math.random() < 0.000018) ? (Math.random() * 2 - 1) * 0.35 : 0;
+            data[i] = last * 1.65 * chatter + clink;
           }
         }
       }
@@ -703,8 +705,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (type === 'cafe') {
         const bp = audioCtx.createBiquadFilter();
         bp.type = 'bandpass';
-        bp.frequency.value = 420;
-        bp.Q.value = 0.65;
+        bp.frequency.value = 460;
+        bp.Q.value = 0.7;
         src.connect(bp);
         bp.connect(synthGain);
         synthNodes.push(bp);
@@ -738,42 +740,58 @@ document.addEventListener('DOMContentLoaded', () => {
       oscL.start();
       oscR.start();
       synthNodes.push(oscL, oscR, gL, gR, merger);
-    } else if (type === 'lofi') {
-      // Sakin elektrik piyano akorları (Cmaj7 -> Am7 -> Fmaj7 -> G6)
-      const chords = [
-        [261.63, 329.63, 392.00, 493.88],
-        [220.00, 261.63, 329.63, 392.00],
-        [174.61, 220.00, 261.63, 349.23],
-        [196.00, 246.94, 293.66, 329.63]
+    } else if (type === 'jazz') {
+      // Jazz Müzik: ii-V-I-VI caz akorları (Dm9 -> G13 -> Cmaj9 -> A7alt) + yumuşak yürüme bası
+      const progression = [
+        { bass: 73.42, chord: [293.66, 349.23, 440.00, 523.25, 659.25] },
+        { bass: 98.00, chord: [246.94, 349.23, 440.00, 587.33, 659.25] },
+        { bass: 65.41, chord: [261.63, 329.63, 392.00, 493.88, 587.33] },
+        { bass: 110.00, chord: [277.18, 349.23, 415.30, 523.25, 622.25] }
       ];
       let step = 0;
       const lp = audioCtx.createBiquadFilter();
       lp.type = 'lowpass';
-      lp.frequency.value = 950;
+      lp.frequency.value = 1150;
       lp.connect(synthGain);
       synthNodes.push(lp);
 
-      const triggerChord = () => {
+      const triggerJazzBar = () => {
         if (!synthGain || audioCtx.state === 'closed') return;
-        const notes = chords[step % chords.length];
+        const bar = progression[step % progression.length];
         step++;
         const now = audioCtx.currentTime;
-        notes.forEach((freq, idxN) => {
+
+        // Caz akoru (hafif gecikmeli arpej/comping)
+        bar.chord.forEach((freq, iNote) => {
           const osc = audioCtx.createOscillator();
           const env = audioCtx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(freq, now + idxN * 0.04);
-          env.gain.setValueAtTime(0.0001, now + idxN * 0.04);
-          env.gain.linearRampToValueAtTime(0.14, now + idxN * 0.04 + 0.12);
-          env.gain.exponentialRampToValueAtTime(0.001, now + 2.35);
+          osc.type = iNote % 2 === 0 ? 'triangle' : 'sine';
+          const t0 = now + iNote * 0.055;
+          osc.frequency.setValueAtTime(freq, t0);
+          env.gain.setValueAtTime(0.0001, t0);
+          env.gain.linearRampToValueAtTime(0.11, t0 + 0.08);
+          env.gain.exponentialRampToValueAtTime(0.001, t0 + 2.1);
           osc.connect(env);
           env.connect(lp);
-          osc.start(now + idxN * 0.04);
-          osc.stop(now + 2.4);
+          osc.start(t0);
+          osc.stop(t0 + 2.15);
         });
+
+        // Yumuşak caz bas vuruşu
+        const bassOsc = audioCtx.createOscillator();
+        const bassEnv = audioCtx.createGain();
+        bassOsc.type = 'sine';
+        bassOsc.frequency.setValueAtTime(bar.bass, now);
+        bassEnv.gain.setValueAtTime(0.0001, now);
+        bassEnv.gain.linearRampToValueAtTime(0.24, now + 0.05);
+        bassEnv.gain.exponentialRampToValueAtTime(0.001, now + 1.9);
+        bassOsc.connect(bassEnv);
+        bassEnv.connect(lp);
+        bassOsc.start(now);
+        bassOsc.stop(now + 1.95);
       };
-      triggerChord();
-      synthTimer = setInterval(triggerChord, 2400);
+      triggerJazzBar();
+      synthTimer = setInterval(triggerJazzBar, 2200);
     }
 
     activePreset = type;
@@ -820,7 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (activePreset) {
       mp3Track.textContent = presetLabels[activePreset] || activePreset;
       mp3Name.hidden = false;
-      mp3Name.textContent = 'DEHB';
+      mp3Name.textContent = activePreset === 'jazz' ? 'Jazz' : (activePreset === 'cafe' ? 'Kafe' : 'DEHB');
       mp3Play.disabled = false;
       mp3Play.textContent = 'Durdur';
     } else {
