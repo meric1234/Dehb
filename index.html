@@ -399,19 +399,21 @@
 
 <script>
 (function clearStaleCacheOnce() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-      let hadSw = false;
-      regs.forEach(r => { hadSw = true; r.unregister().catch(() => {}); });
-      if (hadSw && !sessionStorage.getItem('on-sw-cleared')) {
-        sessionStorage.setItem('on-sw-cleared', '1');
-        location.reload();
-      }
-    }).catch(() => {});
-  }
-  if ('caches' in window) {
-    caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
-  }
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        let hadSw = false;
+        regs.forEach(r => { hadSw = true; r.unregister().catch(() => {}); });
+        if (hadSw && !sessionStorage.getItem('on-sw-cleared')) {
+          sessionStorage.setItem('on-sw-cleared', '1');
+          location.reload();
+        }
+      }).catch(() => {});
+    }
+    if ('caches' in window) {
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
+    }
+  } catch {}
 })();
 
 function prettifyMathText(raw) {
@@ -422,8 +424,8 @@ function prettifyMathText(raw) {
   const toSub = s => [...s].map(ch => subMap[ch] || ('_' + ch)).join('');
 
   const convertExpr = expr => {
-    let t = expr.trim();
-    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, '$1$2$3');
+    let t = String(expr || '').trim();
+    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
     t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
     t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
     t = t.replace(/\\left|\\right/g, '');
@@ -552,11 +554,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  new MutationObserver(muts => {
-    muts.forEach(m => m.addedNodes.forEach(n => {
-      if (n.nodeType === 1) cleanDomTree(n);
-    }));
-  }).observe(document.body, { childList: true, subtree: true });
+  if (document.body) {
+    new MutationObserver(muts => {
+      muts.forEach(m => m.addedNodes.forEach(n => {
+        if (n.nodeType === 1) cleanDomTree(n);
+      }));
+    }).observe(document.body, { childList: true, subtree: true });
+  }
 
   document.getElementById('copyOut')?.addEventListener('click', () => {
     const txt = outEl?.innerText || outEl?.textContent || '';
@@ -578,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const keyClearBtn = document.getElementById('keyClearBtn');
 
   keyPasteBtn?.addEventListener('click', async () => {
+    if (!keyIn) return;
     try {
       const txt = prettifyMathText((await navigator.clipboard.readText()).trim());
       if (txt) {
@@ -595,6 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   keyCopyBtn?.addEventListener('click', async () => {
+    if (!keyIn) return;
     const val = keyIn.value.trim();
     if (!val) {
       appNs.app?.toast?.('Kopyalanacak anahtar yok');
@@ -606,29 +612,17 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch {
       keyIn.focus();
       keyIn.select();
-      document.execCommand('copy');
+      try { document.execCommand('copy'); } catch {}
       appNs.app?.toast?.('API anahtarı panoya kopyalandı');
     }
   });
 
   keyClearBtn?.addEventListener('click', () => {
+    if (!keyIn) return;
     keyIn.value = '';
     keyIn.focus();
     keyIn.dispatchEvent(new Event('input', { bubbles: true }));
   });
-
-  const hideBottomTimerBar = () => {
-    document.querySelectorAll('#stage > div, #main > div, body > div').forEach(el => {
-      if (['app', 'stage', 'world', 'worldTop', 'empty', 'gizmoBar', 'selMenu', 'tools', 'toolPop', 'toast', 'timerPop', 'mp3Pop'].includes(el.id)) return;
-      if (el.classList.contains('modal')) return;
-      const txt = el.textContent || '';
-      if (txt.includes('Kronometre') && (txt.includes('Sıfırla') || txt.includes('Başlat'))) {
-        el.style.display = 'none';
-      }
-    });
-  };
-  hideBottomTimerBar();
-  setTimeout(hideBottomTimerBar, 300);
 
   const mp3Btn = document.getElementById('mp3Btn');
   const mp3Pop = document.getElementById('mp3Pop');
@@ -646,6 +640,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const mp3Track = document.getElementById('mp3Track');
   const mp3Name = document.getElementById('mp3Name');
   const presetBox = document.getElementById('adhdPresets');
+
+  if (!mp3Btn || !mp3Pop) return;
 
   const trackCatalog = {
     fire: {
@@ -710,13 +706,14 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const audio = new Audio();
-  let tracks = [], idx = 0, loop = true, seeking = false, fileActive = false, streamActive = false;
+  audio.preload = 'metadata';
+  let tracks = [], idx = 0, loop = true, seeking = false, fileActive = false, streamActive = false, playToken = 0;
   let audioCtx = null, synthGain = null, synthNodes = [], activePreset = null;
 
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
-  const volVal = Number.isFinite(savedVol) ? savedVol : 0.6;
+  const volVal = Number.isFinite(savedVol) ? Math.max(0, Math.min(1, savedVol)) : 0.6;
   audio.volume = volVal;
-  mp3Vol.value = String(volVal);
+  if (mp3Vol) mp3Vol.value = String(volVal);
 
   const stopSynth = () => {
     synthNodes.forEach(n => {
@@ -733,27 +730,113 @@ document.addEventListener('DOMContentLoaded', () => {
     presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
   };
 
-  const tryPlayCandidates = async (candidates, label) => {
+  const fmtTime = sec => {
+    if (!Number.isFinite(sec) || sec < 0) return '00:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const syncSeekUI = () => {
+    const usesAudioElement = !activePreset || !!trackCatalog[activePreset]?.candidates;
+    const dur = usesAudioElement && Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (mp3Rew) mp3Rew.disabled = !usesAudioElement || audio.paused;
+    if (mp3Fwd) mp3Fwd.disabled = !usesAudioElement || audio.paused;
+    if (mp3Seek) {
+      mp3Seek.disabled = !usesAudioElement || dur <= 0;
+      if (dur > 0) {
+        mp3Seek.max = String(dur);
+        if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, dur));
+      } else if (!seeking) {
+        mp3Seek.value = '0';
+      }
+    }
+    if (mp3CurTime) mp3CurTime.textContent = usesAudioElement ? fmtTime(seeking ? parseFloat(mp3Seek?.value || '0') : audio.currentTime) : (streamActive ? '∞' : '00:00');
+    if (mp3DurTime) mp3DurTime.textContent = usesAudioElement ? fmtTime(dur) : (streamActive ? 'Aktif' : '00:00');
+  };
+
+  const seekTo = sec => {
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const clamped = dur > 0 ? Math.max(0, Math.min(sec, dur)) : Math.max(0, sec);
+    audio.currentTime = clamped;
+    if (mp3Seek) mp3Seek.value = String(clamped);
+    if (mp3CurTime) mp3CurTime.textContent = fmtTime(clamped);
+  };
+
+  const syncMp3 = () => {
+    const cur = tracks[idx];
+    const isPlaying = activePreset
+      ? (trackCatalog[activePreset]?.candidates ? !audio.paused : streamActive)
+      : (!audio.paused && !!cur);
+
+    mp3Btn.classList.toggle('playing', isPlaying);
+
+    if (activePreset && trackCatalog[activePreset]) {
+      const meta = trackCatalog[activePreset];
+      if (mp3Track) mp3Track.textContent = meta.label;
+      if (mp3Name) {
+        mp3Name.hidden = false;
+        mp3Name.textContent = meta.badge;
+      }
+      if (mp3Play) {
+        mp3Play.disabled = false;
+        mp3Play.textContent = isPlaying ? 'Durdur' : 'Oynat';
+      }
+    } else if (fileActive && cur) {
+      if (mp3Track) mp3Track.textContent = cur.name;
+      if (mp3Name) {
+        mp3Name.hidden = false;
+        mp3Name.textContent = cur.name.replace(/\.[^.]+$/, '');
+      }
+      if (mp3Play) {
+        mp3Play.disabled = false;
+        mp3Play.textContent = !audio.paused ? 'Duraklat' : 'Oynat';
+      }
+    } else {
+      if (mp3Track) mp3Track.textContent = 'Seçim yapılmadı';
+      if (mp3Name) {
+        mp3Name.hidden = true;
+        mp3Name.textContent = '';
+      }
+      if (mp3Play) {
+        mp3Play.disabled = !tracks.length;
+        mp3Play.textContent = 'Oynat';
+      }
+    }
+
+    if (mp3Next) mp3Next.hidden = tracks.length <= 1;
+    if (mp3Loop) mp3Loop.textContent = loop ? 'Döngü: Açık' : 'Döngü: Kapalı';
+    syncSeekUI();
+  };
+
+  const tryPlayCandidates = async (candidates, label, token) => {
     for (const url of candidates) {
+      if (token !== playToken) return false;
       try {
+        audio.pause();
         audio.src = url;
         audio.loop = loop;
+        audio.load();
         await audio.play();
+        if (token !== playToken) return false;
         streamActive = true;
         syncMp3();
         return true;
       } catch {}
     }
+    if (token !== playToken) return false;
     streamActive = false;
     activePreset = null;
     presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
     syncMp3();
     appNs.app?.toast?.(`${label} dosyası bulunamadı, dosya seçici açılıyor…`);
-    mp3In.click();
+    mp3In?.click();
     return false;
   };
 
   const startPreset = type => {
+    playToken++;
+    const token = playToken;
     stopSynth();
     fileActive = false;
     audio.pause();
@@ -765,7 +848,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (meta.candidates) {
       syncMp3();
-      tryPlayCandidates(meta.candidates, meta.label);
+      tryPlayCandidates(meta.candidates, meta.label, token);
       return;
     }
 
@@ -775,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
 
     synthGain = audioCtx.createGain();
-    synthGain.gain.value = (parseFloat(mp3Vol.value) || 0.6) * 0.35;
+    synthGain.gain.value = (parseFloat(mp3Vol?.value || '0.6') || 0.6) * 0.35;
     synthGain.connect(audioCtx.destination);
 
     if (type === 'brown') {
@@ -829,89 +912,29 @@ document.addEventListener('DOMContentLoaded', () => {
     syncMp3();
   };
 
-  const fmtTime = sec => {
-    if (!Number.isFinite(sec) || sec < 0) return '00:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
-
-  const syncSeekUI = () => {
-    const usesAudioElement = !activePreset || !!trackCatalog[activePreset]?.candidates;
-    const dur = usesAudioElement && Number.isFinite(audio.duration) ? audio.duration : 0;
-    mp3Rew.disabled = !usesAudioElement || audio.paused;
-    mp3Fwd.disabled = !usesAudioElement || audio.paused;
-    mp3Seek.disabled = !usesAudioElement || dur <= 0;
-    if (dur > 0) {
-      mp3Seek.max = String(dur);
-      if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, dur));
-    } else if (!seeking) {
-      mp3Seek.value = '0';
-    }
-    mp3CurTime.textContent = usesAudioElement ? fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime) : (streamActive ? '∞' : '00:00');
-    mp3DurTime.textContent = usesAudioElement ? fmtTime(dur) : (streamActive ? 'Aktif' : '00:00');
-  };
-
-  const seekTo = sec => {
-    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
-    const clamped = dur > 0 ? Math.max(0, Math.min(sec, dur)) : Math.max(0, sec);
-    audio.currentTime = clamped;
-    mp3Seek.value = String(clamped);
-    mp3CurTime.textContent = fmtTime(clamped);
-  };
-
-  const syncMp3 = () => {
-    const cur = tracks[idx];
-    const isPlaying = activePreset
-      ? (trackCatalog[activePreset]?.candidates ? !audio.paused : streamActive)
-      : (!audio.paused && !!cur);
-
-    mp3Btn.classList.toggle('playing', isPlaying);
-
-    if (activePreset && trackCatalog[activePreset]) {
-      const meta = trackCatalog[activePreset];
-      mp3Track.textContent = meta.label;
-      mp3Name.hidden = false;
-      mp3Name.textContent = meta.badge;
-      mp3Play.disabled = false;
-      mp3Play.textContent = isPlaying ? 'Durdur' : 'Oynat';
-    } else if (fileActive && cur) {
-      mp3Track.textContent = cur.name;
-      mp3Name.hidden = false;
-      mp3Name.textContent = cur.name.replace(/\.[^.]+$/, '');
-      mp3Play.disabled = false;
-      mp3Play.textContent = !audio.paused ? 'Duraklat' : 'Oynat';
-    } else {
-      mp3Track.textContent = 'Seçim yapılmadı';
-      mp3Name.hidden = true;
-      mp3Name.textContent = '';
-      mp3Play.disabled = !tracks.length;
-      mp3Play.textContent = 'Oynat';
-    }
-
-    mp3Next.hidden = tracks.length <= 1;
-    mp3Loop.textContent = loop ? 'Döngü: Açık' : 'Döngü: Kapalı';
-    syncSeekUI();
-  };
-
   const playTrack = (i, auto = true) => {
     if (!tracks.length) return;
+    playToken++;
     stopSynth();
     fileActive = true;
     idx = (i + tracks.length) % tracks.length;
     audio.src = tracks[idx].url;
     audio.loop = loop && tracks.length === 1;
-    mp3Seek.value = '0';
-    mp3CurTime.textContent = '00:00';
-    mp3DurTime.textContent = '00:00';
+    if (mp3Seek) mp3Seek.value = '0';
+    if (mp3CurTime) mp3CurTime.textContent = '00:00';
+    if (mp3DurTime) mp3DurTime.textContent = '00:00';
     if (auto) audio.play().catch(() => {});
     syncMp3();
   };
 
   presetBox?.querySelectorAll('[data-snd]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
       const snd = btn.dataset.snd;
+      if (!snd) return;
       if (activePreset === snd) {
+        playToken++;
         stopSynth();
         audio.pause();
         syncMp3();
@@ -922,9 +945,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   mp3Btn.addEventListener('click', e => {
+    e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     const open = mp3Pop.hidden;
-    document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
+    document.querySelectorAll('.pop').forEach(p => { if (p !== mp3Pop) p.hidden = true; });
     mp3Pop.hidden = !open;
     if (!mp3Pop.hidden) {
       const r = mp3Btn.getBoundingClientRect();
@@ -933,10 +958,10 @@ document.addEventListener('DOMContentLoaded', () => {
       mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - popW - 8)) + 'px';
       syncSeekUI();
     }
-  });
+  }, { capture: true });
 
-  mp3Pick.addEventListener('click', () => mp3In.click());
-  mp3In.addEventListener('change', () => {
+  mp3Pick?.addEventListener('click', () => mp3In?.click());
+  mp3In?.addEventListener('change', () => {
     const files = [...(mp3In.files || [])];
     if (!files.length) return;
     tracks.forEach(t => URL.revokeObjectURL(t.url));
@@ -944,11 +969,12 @@ document.addEventListener('DOMContentLoaded', () => {
     playTrack(0, true);
     mp3In.value = '';
   });
-  mp3Play.addEventListener('click', () => {
+  mp3Play?.addEventListener('click', () => {
     if (activePreset) {
       if (trackCatalog[activePreset]?.candidates) {
         audio.paused ? audio.play().catch(() => {}) : audio.pause();
       } else {
+        playToken++;
         stopSynth();
       }
       syncMp3();
@@ -959,31 +985,31 @@ document.addEventListener('DOMContentLoaded', () => {
     audio.paused ? audio.play().catch(() => {}) : audio.pause();
     syncMp3();
   });
-  mp3Next.addEventListener('click', () => playTrack(idx + 1, true));
-  mp3Rew.addEventListener('click', () => {
+  mp3Next?.addEventListener('click', () => playTrack(idx + 1, true));
+  mp3Rew?.addEventListener('click', () => {
     if (audio.paused) return;
     seekTo((audio.currentTime || 0) - 10);
   });
-  mp3Fwd.addEventListener('click', () => {
+  mp3Fwd?.addEventListener('click', () => {
     if (audio.paused) return;
     seekTo((audio.currentTime || 0) + 10);
   });
-  mp3Seek.addEventListener('pointerdown', () => { seeking = true; });
-  mp3Seek.addEventListener('input', () => {
-    mp3CurTime.textContent = fmtTime(parseFloat(mp3Seek.value));
+  mp3Seek?.addEventListener('pointerdown', () => { seeking = true; });
+  mp3Seek?.addEventListener('input', () => {
+    if (mp3CurTime && mp3Seek) mp3CurTime.textContent = fmtTime(parseFloat(mp3Seek.value));
   });
-  mp3Seek.addEventListener('change', () => {
-    seekTo(parseFloat(mp3Seek.value));
+  mp3Seek?.addEventListener('change', () => {
+    if (mp3Seek) seekTo(parseFloat(mp3Seek.value));
     seeking = false;
   });
   window.addEventListener('pointerup', () => { seeking = false; });
 
-  mp3Loop.addEventListener('click', () => {
+  mp3Loop?.addEventListener('click', () => {
     loop = !loop;
     audio.loop = loop;
     syncMp3();
   });
-  mp3Vol.addEventListener('input', () => {
+  mp3Vol?.addEventListener('input', () => {
     const v = parseFloat(mp3Vol.value) || 0;
     audio.volume = v;
     if (synthGain) synthGain.gain.value = v * 0.35;
@@ -1010,16 +1036,18 @@ document.addEventListener('DOMContentLoaded', () => {
     try { localStorage.setItem('on-spen-action', val); } catch {}
     if (appNs.settings) { appNs.settings.spenAction = val; appNs.saveSettings?.(); }
   };
-  spenSel.value = getSpenAct();
+  if (spenSel) spenSel.value = getSpenAct();
 
   document.getElementById('openSettings')?.addEventListener('click', () => {
-    setTimeout(() => { spenSel.value = getSpenAct(); }, 10);
+    if (spenSel) setTimeout(() => { spenSel.value = getSpenAct(); }, 10);
   });
-  spenSel.addEventListener('change', () => {
+  spenSel?.addEventListener('change', () => {
     setSpenAct(spenSel.value);
     appNs.app?.toast?.('S Pen tuş görevi kaydedildi');
   });
-  document.getElementById('setForm')?.addEventListener('submit', () => setSpenAct(spenSel.value));
+  document.getElementById('setForm')?.addEventListener('submit', () => {
+    if (spenSel) setSpenAct(spenSel.value);
+  });
 
   const activeTool = () => document.querySelector('#toolBtns [data-tool].on')?.dataset.tool || 'pen';
   const switchTool = t => {
