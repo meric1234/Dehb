@@ -29,16 +29,15 @@
 
 <style>
   #timerBar,
-  [id*="timerBar"],
-  [class*="timer-bar"],
-  [class*="timerBar"] {
+  .fs-dock,
+  .fs-mini,
+  .fs-float,
+  .fs-sound-sec,
+  .on-hide-unwanted {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
     pointer-events: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
   }
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
@@ -476,23 +475,37 @@ function prettifyMathText(raw) {
 window.prettifyMathText = prettifyMathText;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const hideBottomTimerBars = root => {
-    const scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll('#timerBar, [id*="timerBar"], [class*="timer-bar"], [class*="timerBar"]').forEach(el => {
-      if (el.closest && el.closest('#top, #timerPop')) return;
-      el.style.setProperty('display', 'none', 'important');
-      el.style.setProperty('visibility', 'hidden', 'important');
-      el.style.setProperty('height', '0', 'important');
-      el.style.setProperty('overflow', 'hidden', 'important');
+  const cleanExtraTimerUI = () => {
+    const timerPop = document.getElementById('timerPop');
+    if (timerPop) {
+      timerPop.querySelectorAll('*').forEach(el => {
+        const txt = (el.textContent || '').trim();
+        if (txt.startsWith('Odak Sesi')) {
+          el.classList.add('on-hide-unwanted');
+          let sib = el.nextElementSibling;
+          while (sib) {
+            sib.classList.add('on-hide-unwanted');
+            sib = sib.nextElementSibling;
+          }
+        }
+      });
+    }
+
+    document.querySelectorAll('#stage > div, body > div, #main > div').forEach(el => {
+      if (el.id === 'tools' || el.id === 'timerPop' || el.id === 'mp3Pop' || el.id === 'ai' || el.id === 'gizmoBar' || el.id === 'selMenu') return;
+      if (el.closest && el.closest('#tools, #timerPop, #mp3Pop, #ai, #side, #top')) return;
+      const txt = (el.textContent || '');
+      if (txt.includes('Kronometre') && txt.includes('Sıfırla') && (txt.includes('Ses:') || txt.includes('-5d') || txt.includes('+5d'))) {
+        el.classList.add('on-hide-unwanted');
+      }
     });
   };
-  hideBottomTimerBars(document);
+
+  cleanExtraTimerUI();
+  setTimeout(cleanExtraTimerUI, 150);
+  setTimeout(cleanExtraTimerUI, 600);
   if (document.body) {
-    new MutationObserver(muts => {
-      muts.forEach(m => m.addedNodes.forEach(n => {
-        if (n.nodeType === 1) hideBottomTimerBars(n);
-      }));
-    }).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(() => cleanExtraTimerUI()).observe(document.body, { childList: true, subtree: true });
   }
 
   const appNs = window.ON || (window.ON = {});
@@ -673,7 +686,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (!mp3Btn || !mp3Pop) return;
 
- const trackCatalog = {
+  const trackCatalog = {
     fire: {
       label: 'Şömine',
       badge: 'Şömine',
