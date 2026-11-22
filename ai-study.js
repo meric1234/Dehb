@@ -1,8 +1,7 @@
 /* =====================================================================
-   Odak Not — ai-study.js (Obsidian Studio & Smart Fallback Edition)
-   Gemini istemcisi (yeniden deneme + çoklu yedek model), Asistan paneli,
-   Markdown + KaTeX, StickyCardManager (yapışkan kartlar),
-   StudyGuideBuilder (çalışma özeti + sınav soruları).
+   Odak Not — ai-study.js
+   Gemini istemcisi (tüm aktif modellerde canlı keşif + tam yedekleme),
+   Asistan paneli, Markdown + KaTeX, StickyCardManager, StudyGuideBuilder.
    API anahtarı koda gömülmez; kullanıcı arayüzden girer (localStorage).
    ===================================================================== */
 'use strict';
@@ -18,10 +17,9 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
   };
   ON.LS = LS;
-  ON.settings = Object.assign({ key: '', model: 'gemini-2.5-flash', custom: '', fingerDraw: false, minimap: true }, LS.get('on-settings', {}));
-  // Geçersiz eski varsayılan model (3.8 / 3.5 vb.) kayıtlı kaldıysa çalışan modele çek
-  if (!ON.settings.model || /^gemini-3\./.test(ON.settings.model)) {
-    ON.settings.model = 'gemini-2.5-flash';
+  ON.settings = Object.assign({ key: '', model: 'gemini-3.8-flash', custom: '', fingerDraw: false, minimap: true }, LS.get('on-settings', {}));
+  if (!ON.settings.model || /^gemini-(1\.|2\.0-flash$)/.test(ON.settings.model)) {
+    ON.settings.model = 'gemini-3.8-flash';
     LS.set('on-settings', ON.settings);
   }
   ON.saveSettings = () => LS.set('on-settings', ON.settings);
@@ -56,17 +54,32 @@ Kurallar: Türkçe yaz. Kısa paragraflar, numaralı adımlar; her adımda tek f
 satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığın el yazısı kısımları [?] ile işaretle.`;
   const API = 'https://generativelanguage.googleapis.com/v1beta/';
   const RETRY = new Set([500, 502, 503, 504]);
-  const STATIC_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest'];
+  const SAFE_FALLBACKS = [
+    'gemini-3.8-flash',
+    'gemini-3.8-flash-lite',
+    'gemini-3.8-pro',
+    'gemini-3.5-flash',
+    'gemini-3.5-pro',
+    'gemini-3.0-flash',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro',
+    'gemini-flash-latest',
+    'gemini-pro-latest'
+  ];
+  const EXCLUDE_RE = /(tts|image|imagen|veo|lyria|aqa|live|audio|embedding|robotics|computer|transcribe|translate)/i;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const detail = (status, msg) => msg ? `\n\nAyrıntı (${status}): ${msg.slice(0, 200)}` : ` (kod ${status})`;
+  const detail = (status, msg) => msg ? `\n\nAyrıntı (${status}): ${msg.slice(0, 220)}` : ` (kod ${status})`;
+
   function friendly(status, msg) {
     if (status === 400 && /API key|API_KEY/i.test(msg)) return 'API anahtarı geçersiz görünüyor. AI Studio\'dan kopyalarken eksik kalmış olabilir.';
     if (status === 403) return 'Anahtarın bu API\'ye izni yok. AI Studio\'da yeni bir anahtar oluşturmayı dene.';
-    if (status === 429) return 'Ücretsiz kota doldu ya da çok hızlı istek gitti. Yedek modeller de denendi; 1 dakika bekleyip tekrar dene.' + detail(status, msg);
-    if (status === 503 || /overloaded|UNAVAILABLE|high demand/i.test(msg)) return 'Gemini şu an çok yoğun; denemeler ve yedek model de yanıt vermedi. 1-2 dakika sonra tekrar dene.' + detail(status, msg);
-    if (status >= 500) return 'Google tarafında geçici bir hata oluştu; otomatik denemeler de başarısız oldu.' + detail(status, msg);
+    if (status === 429) return 'Aktif tüm modellerin ücretsiz kotası dolmuş görünüyor. 1 dakika bekleyip tekrar dene.' + detail(status, msg);
+    if (status === 503 || /overloaded|UNAVAILABLE|high demand/i.test(msg)) return 'Gemini sunucuları şu an çok yoğun; aktif tüm modeller denendi ancak yanıt alınamadı. 1-2 dakika sonra tekrar dene.' + detail(status, msg);
+    if (status >= 500) return 'Google tarafında geçici bir hata oluştu; tüm aktif modeller denendi.' + detail(status, msg);
     return `Hata (${status}): ${msg}`;
   }
+
   function diagnose() {
     let framed = false; try { framed = window.self !== window.top; } catch { framed = true; }
     if (!navigator.onLine) return 'Cihaz çevrimdışı görünüyor. İnternete bağlanıp tekrar dene.';
@@ -74,27 +87,47 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
     if (/^(file|content):$/.test(location.protocol)) return 'Dosya doğrudan cihazdan açılmış. Siteyi GitHub Pages linkinden aç.';
     return 'Google\'a ulaşılamadı. Reklam engelleyici, VPN veya okul/iş ağı generativelanguage.googleapis.com adresini engelliyor olabilir.';
   }
-  let modelCache = null;
-  async function listModels(key) {
-    if (modelCache) return modelCache;
+
+  let cacheKey = '', modelCache = null, liveSet = new Set();
+  async function listModels(key, force = false) {
+    if (!force && modelCache && cacheKey === key) return modelCache;
     try {
       const r = await fetch(API + 'models?pageSize=200', { headers: { 'x-goog-api-key': key } });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) return STATIC_FALLBACKS;
-      const names = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-        .map(m => m.name.replace('models/', ''))
-        .filter(n => /^gemini-/.test(n) && !/(tts|image|live|audio|embedding|robotics|computer|transcribe|translate)/.test(n));
-      const score = n => (/flash/.test(n) ? 1000 : 0) + (/lite/.test(n) ? 150 : 0) - (/preview|exp/.test(n) ? 50 : 0) + (parseFloat(n.slice(7)) || 0);
+      if (!r.ok) return SAFE_FALLBACKS;
+      const names = (j.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => m.name.replace(/^models\//, ''))
+        .filter(n => /^gemini-/.test(n) && !/^gemini-1\./.test(n) && !EXCLUDE_RE.test(n));
+
+      const score = n => {
+        let s = 0;
+        if (/flash/.test(n)) s += 1000;
+        else if (/pro/.test(n)) s += 700;
+        if (/lite/.test(n)) s -= 80;
+        if (/preview|exp/.test(n)) s -= 40;
+        const ver = parseFloat((n.match(/^gemini-(\d+(?:\.\d+)?)/) || [])[1] || '0');
+        s += ver * 25;
+        return s;
+      };
       names.sort((a, b) => score(b) - score(a));
-      const merged = [...new Set([...STATIC_FALLBACKS, ...names])];
-      return (modelCache = merged);
+      liveSet = new Set(names);
+      cacheKey = key;
+      modelCache = names.length ? [...new Set([...names, ...SAFE_FALLBACKS])] : SAFE_FALLBACKS;
+      return modelCache;
     } catch {
-      return STATIC_FALLBACKS;
+      return SAFE_FALLBACKS;
     }
   }
+  ON.listModels = listModels;
+
   ON.gemini = async (s, parts, onStatus = () => {}) => {
     let viaQuery = false;
-    const body = JSON.stringify({ systemInstruction: { parts: [{ text: SYS }] }, contents: [{ role: 'user', parts }], generationConfig: { temperature: 0.2 } });
+    const body = JSON.stringify({
+      systemInstruction: { parts: [{ text: SYS }] },
+      contents: [{ role: 'user', parts }],
+      generationConfig: { temperature: 0.2 }
+    });
     const call = model => fetch(`${API}models/${encodeURIComponent(model)}:generateContent` + (viaQuery ? `?key=${encodeURIComponent(s.key)}` : ''), {
       method: 'POST',
       headers: viaQuery ? { 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json', 'x-goog-api-key': s.key },
@@ -108,35 +141,59 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
         try { return await call(model); } catch { throw new Error(diagnose()); }
       }
     };
-    const first = s.custom || s.model, tried = new Set();
-    let model = first, r = null, j = {}, swaps = 0, gone = false;
-    while (true) {
-      tried.add(model);
-      const maxAttempts = swaps === 0 ? 2 : 1;
+
+    const allCandidates = await listModels(s.key);
+    const queue = [];
+    if (s.custom) {
+      queue.push(s.custom);
+    } else if (s.model && (!liveSet.size || liveSet.has(s.model))) {
+      queue.push(s.model);
+    }
+    for (const m of allCandidates) {
+      if (!queue.includes(m)) queue.push(m);
+    }
+
+    let r = null, j = {}, activeModel = queue[0], initialSwapped = false;
+    for (let idx = 0; idx < queue.length; idx++) {
+      const model = queue[idx];
+      activeModel = model;
+      if (idx > 0) {
+        initialSwapped = true;
+        onStatus(`Aktif model aranıyor (${idx + 1}/${queue.length}): ${model}…`);
+      }
+
+      const maxAttempts = idx === 0 ? 2 : 1;
       for (let a = 0; a < maxAttempts; a++) {
-        if (a) { onStatus(`Gemini yoğun, tekrar deneniyor (${a + 1}/${maxAttempts})…`); await sleep(1200 + Math.random() * 400); }
+        if (a > 0) {
+          onStatus(`${model} yoğun, tekrar deneniyor…`);
+          await sleep(1000 + Math.random() * 300);
+        }
         r = await send(model);
         if (r.ok || !RETRY.has(r.status)) break;
       }
+
       if (r.ok) break;
       j = await r.json().catch(() => ({}));
-      const canSwap = r.status === 404 || r.status === 429 || RETRY.has(r.status);
-      if (!canSwap || swaps >= 3) break;
-      if (r.status === 404) gone = true;
-      const candidates = await listModels(s.key);
-      const next = candidates.find(n => !tried.has(n));
-      if (!next) break;
-      onStatus(`${model} kotaya takıldı/yanıt vermedi, ${next} deneniyor…`);
-      model = next; swaps++;
+      const errMsg = j.error?.message || '';
+      if (r.status === 400 && /API key|API_KEY/i.test(errMsg)) break;
     }
-    if (!r.ok) { if (!j.error) j = await r.json().catch(() => ({})); throw new Error(friendly(r.status, j.error?.message || '')); }
+
+    if (!r || !r.ok) {
+      if (!j.error && r) j = await r.json().catch(() => ({}));
+      throw new Error(friendly(r?.status || 0, j.error?.message || ''));
+    }
+
     const res = await r.json().catch(() => ({}));
-    if (gone && model !== first && !s.custom) { s.model = model; ON.saveSettings(); }
+    if (initialSwapped && !s.custom && s.model !== activeModel) {
+      s.model = activeModel;
+      ON.saveSettings();
+    }
+
     const cand = res.candidates?.[0];
     if (!cand) throw new Error('Yanıt engellendi ya da boş döndü' + (res.promptFeedback?.blockReason ? ` (${res.promptFeedback.blockReason})` : '') + '.');
     const text = (cand.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('').trim();
     if (!text && cand.finishReason && cand.finishReason !== 'STOP') throw new Error(`Yanıt tamamlanamadı (${cand.finishReason}). Tekrar dene.`);
-    return { model, text };
+    return { model: activeModel, text };
   };
 
   /* ================= Asistan paneli ================= */
@@ -178,7 +235,6 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
     open() { ON.app.closePanelsExcept('ai'); $('ai').classList.add('on'); },
     close() { $('ai').classList.remove('on'); },
     toggle() { $('ai').classList.contains('on') ? this.close() : this.open(); },
-    // ctx: { b64, mime, label, anchor, url } (görsel) veya { text, label, anchor }
     setContext(ctx) {
       if (this.ctx?.url) URL.revokeObjectURL(this.ctx.url);
       this.ctx = ctx;
@@ -259,7 +315,6 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
       const a = anchor || ON.app.viewAnchor();
       const L = ON.app.pageOrigin(a.page), w = 340;
       let x = a.x + 16;
-      // Sayfalı düzende kart sayfanın içinde kalsın (dışa aktarmada kesilmesin)
       if (L.w) x = Math.max(8, Math.min(x, L.w - w - 8));
       const y = L.h ? Math.max(8, Math.min(a.y, L.h - 268)) : a.y;
       const card = { id: ON.uid(), page: a.page, x, y, w, h: 260, collapsed: false, theme: 'krem', title: this.titleOf(md), md, created: Date.now() };
@@ -323,7 +378,6 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
       });
       n.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
     }
-    // Dışa aktarma için kartı düz (dönüşümsüz) bir kopyada tuvale çevir
     async rasterize(c, scale) {
       const n = this.nodes.get(c.id);
       const clone = document.createElement('div');
