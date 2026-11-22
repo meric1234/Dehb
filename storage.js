@@ -21,11 +21,23 @@ window.ON = window.ON || {};
 
   /* ---------------- IndexedDB çekirdeği ---------------- */
   let dbPromise = null;
-  function open() {
+  let activeDb = null;
+
+  function open(forceNew = false) {
+    if (forceNew) {
+      dbPromise = null;
+      activeDb = null;
+    }
     if (dbPromise) return dbPromise;
+
     dbPromise = new Promise((resolve, reject) => {
       let req;
-      try { req = indexedDB.open(DB_NAME, DB_VERSION); } catch (e) { reject(e); return; }
+      try { req = indexedDB.open(DB_NAME, DB_VERSION); } catch (e) {
+        dbPromise = null;
+        reject(e);
+        return;
+      }
+
       req.onupgradeneeded = () => {
         const db = req.result;
         const make = (name, opts, indexes = []) => {
@@ -40,38 +52,88 @@ window.ON = window.ON || {};
         make('thumbnails', { keyPath: ['notebookId', 'pageIndex'] }, [['notebookId', 'notebookId']]);
         make('pdf_text_cache', { keyPath: ['hash', 'pageIndex'] }, [['hash', 'hash']]);
         make('assets', { keyPath: 'id' }, [['notebookId', 'notebookId']]);
-        // v1'den kalan 'kv' deposu göç için korunur
       };
+
       req.onsuccess = () => {
         const db = req.result;
-        db.onversionchange = () => db.close();
+        activeDb = db;
+        db.onversionchange = () => {
+          try { db.close(); } catch {}
+          if (activeDb === db) activeDb = null;
+          dbPromise = null;
+        };
+        db.onclose = () => {
+          if (activeDb === db) activeDb = null;
+          dbPromise = null;
+        };
         resolve(db);
       };
-      req.onerror = () => reject(req.error);
-      req.onblocked = () => reject(new Error('Veritabanı başka bir sekmede açık. Diğer sekmeleri kapatıp yenileyin.'));
+
+      req.onerror = () => {
+        dbPromise = null;
+        reject(req.error);
+      };
+
+      req.onblocked = () => {
+        dbPromise = null;
+        reject(new Error('Veritabanı başka bir sekmede açık. Diğer sekmeleri kapatıp yenileyin.'));
+      };
     });
+
     return dbPromise;
   }
-  const wrap = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
 
-  async function tx(stores, mode, fn) {
-    const db = await open();
+  const wrap = req => new Promise((res, rej) => {
+    req.onsuccess = () => res(req.result);
+    req.onerror = () => rej(req.error);
+  });
+
+  async function tx(stores, mode, fn, retried = false) {
+    let db;
+    try {
+      db = await open(false);
+    } catch (e) {
+      if (!retried) return tx(stores, mode, fn, true);
+      throw e;
+    }
+
     return new Promise((resolve, reject) => {
-      const t = db.transaction(stores, mode);
+      let t;
+      try {
+        t = db.transaction(stores, mode);
+      } catch (err) {
+        dbPromise = null;
+        if (!retried) {
+          tx(stores, mode, fn, true).then(resolve, reject);
+          return;
+        }
+        reject(err);
+        return;
+      }
+
       let out;
       t.oncomplete = () => resolve(out);
       t.onerror = () => reject(t.error);
       t.onabort = () => reject(t.error || new Error('İşlem iptal edildi'));
-      const r = fn(t);
-      if (r && typeof r.then === 'function') r.then(v => { out = v; }, reject);
-      else out = r;
+
+      try {
+        const r = fn(t);
+        if (r && typeof r.then === 'function') r.then(v => { out = v; }, reject);
+        else out = r;
+      } catch (e) {
+        reject(e);
+      }
     });
   }
 
   const Store = {
     open,
     get: (store, key) => tx([store], 'readonly', t => wrap(t.objectStore(store).get(key))),
-    put: (store, value, key) => tx([store], 'readwrite', t => { t.objectStore(store).put(value, key); }),
+    put: (store, value, key) => tx([store], 'readwrite', t => {
+      const os = t.objectStore(store);
+      if (key !== undefined) os.put(value, key);
+      else os.put(value);
+    }),
     del: (store, key) => tx([store], 'readwrite', t => { t.objectStore(store).delete(key); }),
     all: (store, index, query) => tx([store], 'readonly', t => {
       const s = t.objectStore(store);
@@ -96,13 +158,21 @@ window.ON = window.ON || {};
   const canGzip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
   async function gzip(u8) {
     if (!canGzip) return { gz: false, data: u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) };
-    const stream = new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'));
-    return { gz: true, data: await new Response(stream).arrayBuffer() };
+    try {
+      const stream = new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'));
+      return { gz: true, data: await new Response(stream).arrayBuffer() };
+    } catch {
+      return { gz: false, data: u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) };
+    }
   }
   async function gunzip(buf, gz) {
     if (!gz) return new Uint8Array(buf);
-    const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    try {
+      const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch {
+      return new Uint8Array(buf);
+    }
   }
   ON.gzip = gzip; ON.gunzip = gunzip;
 
@@ -136,10 +206,9 @@ window.ON = window.ON || {};
   }
   ON.rdp = rdp;
 
-  /* ---------------- Çizgi kodlayıcı ----------------
-     [u32 başlık uzunluğu][başlık JSON (utf8)][hizalama][Float32 noktalar (sayfa-yerel)] → gzip */
+  /* ---------------- Çizgi kodlayıcı ---------------- */
   const enc = new TextEncoder(), dec = new TextDecoder();
-  async function encodeStrokes(strokes, ox, oy) {
+  async function encodeStrokes(strokes, ox = 0, oy = 0) {
     let total = 0;
     const meta = strokes.map(s => {
       total += s.pts.length;
@@ -163,7 +232,7 @@ window.ON = window.ON || {};
     }
     return gzip(new Uint8Array(buf));
   }
-  async function decodeStrokes(rec, ox, oy) {
+  async function decodeStrokes(rec, ox = 0, oy = 0) {
     if (!rec || !rec.data) return [];
     const u8 = await gunzip(rec.data, rec.gz);
     const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
@@ -190,7 +259,6 @@ window.ON = window.ON || {};
       const h = await crypto.subtle.digest('SHA-256', buf);
       return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    // Güvenli olmayan bağlamda (http) basit yedek özet
     let h1 = 0x811c9dc5, u8 = new Uint8Array(buf);
     for (let i = 0; i < u8.length; i++) { h1 ^= u8[i]; h1 = Math.imul(h1, 16777619); }
     return 'fnv-' + (h1 >>> 0).toString(16) + '-' + u8.length;
@@ -204,9 +272,19 @@ window.ON = window.ON || {};
     return out;
   };
   ON.requestPersist = async () => {
-    try { if (navigator.storage?.persist) return await navigator.storage.persist(); } catch {}
+    try {
+      if (navigator.storage?.persisted && await navigator.storage.persisted()) return true;
+      if (navigator.storage?.persist) return await navigator.storage.persist();
+    } catch {}
     return false;
   };
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', () => {
+      ON.requestPersist().catch(() => {});
+    }, { once: true });
+  }
+
   ON.cleanupOrphans = async () => {
     const nbs = await Store.all('notebooks');
     const used = new Set(nbs.map(n => n.pdfHash).filter(Boolean));
@@ -284,8 +362,7 @@ window.ON = window.ON || {};
     return { notebooks: data.notebooks?.length || 0 };
   };
 
-  /* ---------------- v1 → v2 göçü ----------------
-     v1: 'kv' deposunda 'index' (klasör+not listesi), 'note:<id>' {strokes:[{color,w,hl,pts:[[x,y,p]]}], bg}, 'pages:<id>' [JPEG sayfalar] */
+  /* ---------------- v1 → v2 göçü ---------------- */
   ON.migrateV1 = async () => {
     if (!(await Store.has('kv'))) return 0;
     if (await Store.meta.get('migratedV1')) return 0;
