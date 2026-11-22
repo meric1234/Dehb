@@ -41,9 +41,27 @@
   #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
   #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
-  .key-row { display: flex; gap: 6px; align-items: stretch; }
-  .key-row input { flex: 1; min-width: 0; margin: 0 !important; user-select: text; -webkit-user-select: text; }
-  .key-row .btn { white-space: nowrap; padding: 0 10px; }
+
+  /* Metin kutularında yerel kopyala/yapıştır menüsünü ve seçimi zorla etkinleştir */
+  input, textarea, #settingsDlg input, #keyIn {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -webkit-touch-callout: default !important;
+    touch-action: auto !important;
+  }
+  .key-box {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .key-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .key-actions .btn {
+    flex: 1;
+    justify-content: center;
+  }
 </style>
 
 <!-- Uygulama modülleri (sıra önemli) -->
@@ -259,11 +277,13 @@
     <h2 id="setT">Ayarlar</h2>
     <div class="lbl">Gemini</div>
     <p class="hint small">API anahtarın yalnızca bu cihazda saklanır ve doğrudan Google'a gönderilir. Ücretsiz anahtar: aistudio.google.com/apikey</p>
-    <div class="key-row">
-      <input id="keyIn" type="password" placeholder="Gemini API anahtarı" autocomplete="off">
-      <button type="button" class="btn" id="keyEyeBtn" title="Göster / Gizle">Göster</button>
-      <button type="button" class="btn" id="keyPasteBtn" title="Panodan yapıştır">Yapıştır</button>
-      <button type="button" class="btn" id="keyCopyBtn" title="Panoya kopyala">Kopyala</button>
+    <div class="key-box">
+      <input id="keyIn" type="text" spellcheck="false" autocapitalize="off" placeholder="Gemini API anahtarını buraya yapıştır (AIza...)" autocomplete="off">
+      <div class="key-actions">
+        <button type="button" class="btn" id="keyPasteBtn">Panodan Yapıştır</button>
+        <button type="button" class="btn" id="keyCopyBtn">Kopyala</button>
+        <button type="button" class="btn ghost" id="keyClearBtn">Temizle</button>
+      </div>
     </div>
     <select id="modelIn">
       <option value="gemini-3.8-flash">gemini-3.8-flash (önerilen)</option>
@@ -335,17 +355,23 @@
 <input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
 
 <script>
+/* Eski Service Worker önbelleğini temizle ki yeni HTML anında görünsün */
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.update());
+  }).catch(() => {});
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  /* 0. API Anahtarı Yapıştır / Kopyala / Göster Butonları */
+  /* 0. API Anahtarı Yapıştır / Kopyala / Temizle ve Yerel Baloncuk Koruması */
   const keyIn = document.getElementById('keyIn');
-  const keyEyeBtn = document.getElementById('keyEyeBtn');
   const keyPasteBtn = document.getElementById('keyPasteBtn');
   const keyCopyBtn = document.getElementById('keyCopyBtn');
+  const keyClearBtn = document.getElementById('keyClearBtn');
 
-  keyEyeBtn?.addEventListener('click', () => {
-    const isPwd = keyIn.type === 'password';
-    keyIn.type = isPwd ? 'text' : 'password';
-    keyEyeBtn.textContent = isPwd ? 'Gizle' : 'Göster';
+  // Giriş kutusuna dokunma / uzun basma olaylarının uygulama tarafından kesilmesini engelle
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'contextmenu', 'selectstart'].forEach(evt => {
+    keyIn?.addEventListener(evt, e => e.stopPropagation());
   });
 
   keyPasteBtn?.addEventListener('click', async () => {
@@ -356,12 +382,12 @@ document.addEventListener('DOMContentLoaded', () => {
         keyIn.dispatchEvent(new Event('input', { bubbles: true }));
         window.ON?.app?.toast?.('API anahtarı yapıştırıldı');
       } else {
-        window.ON?.app?.toast?.('Panoda metin bulunamadı');
+        window.ON?.app?.toast?.('Panoda kopyalanmış metin yok');
       }
     } catch {
       keyIn.focus();
       keyIn.select();
-      window.ON?.app?.toast?.('Kutuya dokunup Yapıştır seçin');
+      window.ON?.app?.toast?.('Kutunun içine basılı tutup Yapıştır seçin');
     }
   });
 
@@ -373,16 +399,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     try {
       await navigator.clipboard.writeText(val);
-      window.ON?.app?.toast?.('API anahtarı kopyalandı');
+      window.ON?.app?.toast?.('API anahtarı panoya kopyalandı');
     } catch {
-      const prevType = keyIn.type;
-      keyIn.type = 'text';
       keyIn.focus();
       keyIn.select();
       document.execCommand('copy');
-      keyIn.type = prevType;
-      window.ON?.app?.toast?.('API anahtarı kopyalandı');
+      window.ON?.app?.toast?.('API anahtarı panoya kopyalandı');
     }
+  });
+
+  keyClearBtn?.addEventListener('click', () => {
+    keyIn.value = '';
+    keyIn.focus();
+    keyIn.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
   /* 1. Alttaki kronometre çubuğunu gizle (üstteki sayaç korunur) */
