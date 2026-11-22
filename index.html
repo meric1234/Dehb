@@ -33,21 +33,28 @@
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #mp3Pop {
     position: fixed !important;
-    width: 316px;
+    width: 284px;
     max-width: calc(100vw - 16px);
     max-height: calc(100dvh - 72px);
     overflow-y: auto;
+    padding: 10px;
     z-index: 9999 !important;
   }
-  #mp3Pop .mp3-track { font-size: 12px; opacity: .92; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
-  #mp3Pop .mp3-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0 8px; }
-  #mp3Pop .mp3-presets .btn { font-size: 11px; padding: 7px 8px; justify-content: flex-start; text-align: left; }
+  #mp3Pop .lbl { font-size: 10.5px; margin: 6px 0 4px; opacity: .78; }
+  #mp3Pop .lbl:first-child { margin-top: 0; }
+  #mp3Pop .mp3-track { font-size: 11.5px; opacity: .95; margin: 2px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  #mp3Pop .mp3-compact-row { display: flex; gap: 4px; }
+  #mp3Pop .mp3-compact-row .btn { font-size: 11px; padding: 5px 7px; flex: 1; justify-content: center; }
+  #mp3Pop .mp3-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 4px 0 6px; }
+  #mp3Pop .mp3-presets .btn { font-size: 10.5px; padding: 5px 6px; justify-content: flex-start; text-align: left; gap: 4px; }
   #mp3Pop .mp3-presets .btn.active-snd { background: rgba(59, 130, 246, 0.25); border-color: #3b82f6; color: #93c5fd; font-weight: 600; }
-  #mp3Pop .mp3-seek-box { margin: 8px 0; }
-  #mp3Pop .mp3-seek-row { display: flex; align-items: center; gap: 6px; }
-  #mp3Pop .mp3-seek-row input[type="range"] { flex: 1; accent-color: #3b82f6; }
-  #mp3Pop .mp3-time { display: flex; justify-content: space-between; font-size: 11px; opacity: .75; margin-top: 3px; font-variant-numeric: tabular-nums; }
-  #mp3Pop .mp3-vol { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+  #mp3Pop .mp3-seek-box { margin: 6px 0 4px; }
+  #mp3Pop .mp3-seek-row { display: flex; align-items: center; gap: 4px; }
+  #mp3Pop .mp3-seek-row .btn { font-size: 10px; padding: 3px 5px; }
+  #mp3Pop .mp3-seek-row input[type="range"] { flex: 1; accent-color: #3b82f6; height: 14px; }
+  #mp3Pop .mp3-time { display: flex; justify-content: space-between; font-size: 10px; opacity: .72; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  #mp3Pop .mp3-vol { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; }
+  #mp3Pop .mp3-vol .btn { font-size: 10px; padding: 4px 6px; }
   #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
   #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
@@ -348,27 +355,30 @@
 </div>
 
 <div class="pop" id="mp3Pop" data-ui hidden>
-  <div class="lbl">Odak müziği &amp; DEHB sesleri</div>
-  <div class="mp3-track" id="mp3Track">Dosya seçilmedi</div>
-  <div class="row">
-    <button type="button" class="btn pri" id="mp3Pick">+ MP3 Seç</button>
+  <div class="lbl">Müzik &amp; Ortam Sesleri</div>
+  <div class="mp3-track" id="mp3Track">Seçim yapılmadı</div>
+  <div class="mp3-compact-row">
+    <button type="button" class="btn pri" id="mp3Pick">+ MP3</button>
     <button type="button" class="btn" id="mp3Play" disabled>Oynat</button>
     <button type="button" class="btn" id="mp3Next" hidden>Sonraki</button>
   </div>
-  <div class="lbl" style="margin-top:8px;">Odaklanma Müzikleri &amp; Ortam Sesleri</div>
   <div class="mp3-presets" id="adhdPresets">
-    <button type="button" class="btn" data-snd="jazz">🎷 Jazz Müzik</button>
-    <button type="button" class="btn" data-snd="cafe">☕ Kafe Ortamı</button>
-    <button type="button" class="btn" data-snd="brown">🧠 Brown Noise</button>
-    <button type="button" class="btn" data-snd="pink">🌧️ Pink Noise</button>
+    <button type="button" class="btn" data-snd="fire">🔥 Şömine</button>
+    <button type="button" class="btn" data-snd="rain">🌧️ Yağmur</button>
+    <button type="button" class="btn" data-snd="piano">🎹 Piyano</button>
+    <button type="button" class="btn" data-snd="lofi">🎧 Lo-Fi</button>
+    <button type="button" class="btn" data-snd="symphony">🎼 Senfoni</button>
+    <button type="button" class="btn" data-snd="forest">🌲 Orman</button>
+    <button type="button" class="btn" data-snd="city">🏙️ Şehir</button>
     <button type="button" class="btn" data-snd="gamma40">⚡ 40Hz Binaural</button>
-    <button type="button" class="btn" data-snd="theta">🌊 6Hz Theta Odak</button>
+    <button type="button" class="btn" data-snd="theta">🌊 6Hz Theta</button>
+    <button type="button" class="btn" data-snd="brown">🧠 Brown Noise</button>
   </div>
   <div class="mp3-seek-box">
     <div class="mp3-seek-row">
-      <button type="button" class="btn ghost" id="mp3Rew" disabled title="10 saniye geri">-10s</button>
+      <button type="button" class="btn ghost" id="mp3Rew" disabled title="10 sn geri">-10s</button>
       <input type="range" id="mp3Seek" min="0" max="100" step="0.1" value="0" disabled>
-      <button type="button" class="btn ghost" id="mp3Fwd" disabled title="10 saniye ileri">+10s</button>
+      <button type="button" class="btn ghost" id="mp3Fwd" disabled title="10 sn ileri">+10s</button>
     </div>
     <div class="mp3-time">
       <span id="mp3CurTime">00:00</span>
@@ -637,26 +647,78 @@ document.addEventListener('DOMContentLoaded', () => {
   const mp3Name = document.getElementById('mp3Name');
   const presetBox = document.getElementById('adhdPresets');
 
+  const trackCatalog = {
+    fire: {
+      label: 'Şömine',
+      badge: 'Şömine',
+      candidates: [
+        'audio/fire-crackling-with-wind-gusts-gregor-quendel-1-01-03.mp3',
+        'fire-crackling-with-wind-gusts-gregor-quendel-1-01-03.mp3'
+      ]
+    },
+    rain: {
+      label: 'Yağmur',
+      badge: 'Yağmur',
+      candidates: [
+        'audio/mixkit-long-rain-ambience-1247.wav',
+        'mixkit-long-rain-ambience-1247.wav'
+      ]
+    },
+    piano: {
+      label: 'Piyano',
+      badge: 'Piyano',
+      candidates: [
+        'audio/pianocafe_kumi-emotional-pianosecret-love-252596.mp3',
+        'pianocafe_kumi-emotional-pianosecret-love-252596.mp3'
+      ]
+    },
+    lofi: {
+      label: 'Lo-Fi',
+      badge: 'Lo-Fi',
+      candidates: [
+        'audio/danyvin-lofi-chill-638526.mp3',
+        'danyvin-lofi-chill-638526.mp3'
+      ]
+    },
+    symphony: {
+      label: 'Senfoni',
+      badge: 'Senfoni',
+      candidates: [
+        'audio/miromaxmusic-classical-symphony-no-copyright-637830.mp3',
+        'miromaxmusic-classical-symphony-no-copyright-637830.mp3'
+      ]
+    },
+    forest: {
+      label: 'Orman',
+      badge: 'Orman',
+      candidates: [
+        'audio/forest-ambience-light-birdsong-distant-rooster-vincentmets-1-03-38.mp3',
+        'forest-ambience-light-birdsong-distant-rooster-vincentmets-1-03-38.mp3'
+      ]
+    },
+    city: {
+      label: 'Şehir',
+      badge: 'Şehir',
+      candidates: [
+        'audio/city-ambience-distant-emergency-sirens-off-quiet-street-vincentmets-1-02-17.mp3',
+        'city-ambience-distant-emergency-sirens-off-quiet-street-vincentmets-1-02-17.mp3'
+      ]
+    },
+    gamma40: { label: '40Hz Binaural', badge: '40Hz' },
+    theta: { label: '6Hz Theta', badge: '6Hz' },
+    brown: { label: 'Brown Noise', badge: 'Brown' }
+  };
+
   const audio = new Audio();
-  let tracks = [], idx = 0, loop = true, seeking = false;
-  let audioCtx = null, synthGain = null, synthNodes = [], synthTimer = null, activePreset = null;
+  let tracks = [], idx = 0, loop = true, seeking = false, fileActive = false, streamActive = false;
+  let audioCtx = null, synthGain = null, synthNodes = [], activePreset = null;
 
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
   const volVal = Number.isFinite(savedVol) ? savedVol : 0.6;
   audio.volume = volVal;
   mp3Vol.value = String(volVal);
 
-  const presetLabels = {
-    jazz: 'Jazz Müzik (Sıcak Akor & Bas)',
-    cafe: 'Kafe Ortamı',
-    brown: 'Brown Noise (Derin Odak)',
-    pink: 'Pink Noise (Yumuşak Yağmur)',
-    gamma40: '40Hz Binaural (Gamma Odak)',
-    theta: '6Hz Theta Odak Dalgaları'
-  };
-
   const stopSynth = () => {
-    if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
     synthNodes.forEach(n => {
       try { n.stop?.(); } catch {}
       try { n.disconnect?.(); } catch {}
@@ -666,13 +728,47 @@ document.addEventListener('DOMContentLoaded', () => {
       try { synthGain.disconnect(); } catch {}
       synthGain = null;
     }
+    streamActive = false;
     activePreset = null;
     presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
   };
 
-  const startSynth = type => {
+  const tryPlayCandidates = async (candidates, label) => {
+    for (const url of candidates) {
+      try {
+        audio.src = url;
+        audio.loop = loop;
+        await audio.play();
+        streamActive = true;
+        syncMp3();
+        return true;
+      } catch {}
+    }
+    streamActive = false;
+    activePreset = null;
+    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
+    syncMp3();
+    appNs.app?.toast?.(`${label} dosyası bulunamadı, dosya seçici açılıyor…`);
+    mp3In.click();
+    return false;
+  };
+
+  const startPreset = type => {
     stopSynth();
+    fileActive = false;
     audio.pause();
+    const meta = trackCatalog[type];
+    if (!meta) return;
+
+    activePreset = type;
+    presetBox?.querySelector(`[data-snd="${type}"]`)?.classList.add('active-snd');
+
+    if (meta.candidates) {
+      syncMp3();
+      tryPlayCandidates(meta.candidates, meta.label);
+      return;
+    }
+
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!audioCtx) audioCtx = new Ctx();
@@ -682,60 +778,24 @@ document.addEventListener('DOMContentLoaded', () => {
     synthGain.gain.value = (parseFloat(mp3Vol.value) || 0.6) * 0.35;
     synthGain.connect(audioCtx.destination);
 
-    const sr = audioCtx.sampleRate;
-    const len = sr * 4;
-
-    if (type === 'brown' || type === 'pink' || type === 'cafe') {
+    if (type === 'brown') {
+      const sr = audioCtx.sampleRate;
+      const len = sr * 4;
       const buf = audioCtx.createBuffer(2, len, sr);
       for (let ch = 0; ch < 2; ch++) {
         const data = buf.getChannelData(ch);
-        if (type === 'brown') {
-          let last = 0;
-          for (let i = 0; i < len; i++) {
-            const w = Math.random() * 2 - 1;
-            data[i] = (last + 0.02 * w) / 1.02;
-            last = data[i];
-            data[i] *= 2.4;
-          }
-        } else if (type === 'pink') {
-          let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-          for (let i = 0; i < len; i++) {
-            const w = Math.random() * 2 - 1;
-            b0 = 0.99886 * b0 + w * 0.0555179;
-            b1 = 0.99332 * b1 + w * 0.0750759;
-            b2 = 0.96900 * b2 + w * 0.1538520;
-            b3 = 0.86650 * b3 + w * 0.3104856;
-            b4 = 0.55000 * b4 + w * 0.5329522;
-            b5 = -0.7616 * b5 - w * 0.0168980;
-            data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.08;
-            b6 = w * 0.115926;
-          }
-        } else {
-          let last = 0;
-          for (let i = 0; i < len; i++) {
-            const w = Math.random() * 2 - 1;
-            last = (last + 0.065 * w) / 1.065;
-            const chatter = 0.8 + 0.2 * Math.sin((2 * Math.PI * i) / (sr * 3.2));
-            const clink = (Math.random() < 0.000018) ? (Math.random() * 2 - 1) * 0.35 : 0;
-            data[i] = last * 1.65 * chatter + clink;
-          }
+        let last = 0;
+        for (let i = 0; i < len; i++) {
+          const w = Math.random() * 2 - 1;
+          data[i] = (last + 0.02 * w) / 1.02;
+          last = data[i];
+          data[i] *= 2.4;
         }
       }
       const src = audioCtx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
-
-      if (type === 'cafe') {
-        const bp = audioCtx.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.value = 460;
-        bp.Q.value = 0.7;
-        src.connect(bp);
-        bp.connect(synthGain);
-        synthNodes.push(bp);
-      } else {
-        src.connect(synthGain);
-      }
+      src.connect(synthGain);
       src.start();
       synthNodes.push(src);
     } else if (type === 'gamma40' || type === 'theta') {
@@ -763,59 +823,9 @@ document.addEventListener('DOMContentLoaded', () => {
       oscL.start();
       oscR.start();
       synthNodes.push(oscL, oscR, gL, gR, merger);
-    } else if (type === 'jazz') {
-      const progression = [
-        { bass: 73.42, chord: [293.66, 349.23, 440.00, 523.25, 659.25] },
-        { bass: 98.00, chord: [246.94, 349.23, 440.00, 587.33, 659.25] },
-        { bass: 65.41, chord: [261.63, 329.63, 392.00, 493.88, 587.33] },
-        { bass: 110.00, chord: [277.18, 349.23, 415.30, 523.25, 622.25] }
-      ];
-      let step = 0;
-      const lp = audioCtx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.value = 1150;
-      lp.connect(synthGain);
-      synthNodes.push(lp);
-
-      const triggerJazzBar = () => {
-        if (!synthGain || !audioCtx || audioCtx.state === 'closed') return;
-        const bar = progression[step % progression.length];
-        step++;
-        const now = audioCtx.currentTime;
-
-        bar.chord.forEach((freq, iNote) => {
-          const osc = audioCtx.createOscillator();
-          const env = audioCtx.createGain();
-          osc.type = iNote % 2 === 0 ? 'triangle' : 'sine';
-          const t0 = now + iNote * 0.055;
-          osc.frequency.setValueAtTime(freq, t0);
-          env.gain.setValueAtTime(0.0001, t0);
-          env.gain.linearRampToValueAtTime(0.11, t0 + 0.08);
-          env.gain.exponentialRampToValueAtTime(0.001, t0 + 2.1);
-          osc.connect(env);
-          env.connect(lp);
-          osc.start(t0);
-          osc.stop(t0 + 2.15);
-        });
-
-        const bassOsc = audioCtx.createOscillator();
-        const bassEnv = audioCtx.createGain();
-        bassOsc.type = 'sine';
-        bassOsc.frequency.setValueAtTime(bar.bass, now);
-        bassEnv.gain.setValueAtTime(0.0001, now);
-        bassEnv.gain.linearRampToValueAtTime(0.24, now + 0.05);
-        bassEnv.gain.exponentialRampToValueAtTime(0.001, now + 1.9);
-        bassOsc.connect(bassEnv);
-        bassEnv.connect(lp);
-        bassOsc.start(now);
-        bassOsc.stop(now + 1.95);
-      };
-      triggerJazzBar();
-      synthTimer = setInterval(triggerJazzBar, 2200);
     }
 
-    activePreset = type;
-    presetBox?.querySelector(`[data-snd="${type}"]`)?.classList.add('active-snd');
+    streamActive = true;
     syncMp3();
   };
 
@@ -827,19 +837,19 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const syncSeekUI = () => {
-    const hasTrack = !activePreset && !!tracks[idx];
-    const dur = hasTrack && Number.isFinite(audio.duration) ? audio.duration : 0;
-    mp3Rew.disabled = !hasTrack;
-    mp3Fwd.disabled = !hasTrack;
-    mp3Seek.disabled = !hasTrack || dur <= 0;
+    const usesAudioElement = !activePreset || !!trackCatalog[activePreset]?.candidates;
+    const dur = usesAudioElement && Number.isFinite(audio.duration) ? audio.duration : 0;
+    mp3Rew.disabled = !usesAudioElement || audio.paused;
+    mp3Fwd.disabled = !usesAudioElement || audio.paused;
+    mp3Seek.disabled = !usesAudioElement || dur <= 0;
     if (dur > 0) {
       mp3Seek.max = String(dur);
       if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, dur));
     } else if (!seeking) {
       mp3Seek.value = '0';
     }
-    mp3CurTime.textContent = hasTrack ? fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime) : (activePreset ? '∞' : '00:00');
-    mp3DurTime.textContent = hasTrack ? fmtTime(dur) : (activePreset ? 'DEHB' : '00:00');
+    mp3CurTime.textContent = usesAudioElement ? fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime) : (streamActive ? '∞' : '00:00');
+    mp3DurTime.textContent = usesAudioElement ? fmtTime(dur) : (streamActive ? 'Aktif' : '00:00');
   };
 
   const seekTo = sec => {
@@ -852,21 +862,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const syncMp3 = () => {
     const cur = tracks[idx];
-    const playing = activePreset ? true : (!audio.paused && !!cur);
-    mp3Btn.classList.toggle('playing', playing);
+    const isPlaying = activePreset
+      ? (trackCatalog[activePreset]?.candidates ? !audio.paused : streamActive)
+      : (!audio.paused && !!cur);
 
-    if (activePreset) {
-      mp3Track.textContent = presetLabels[activePreset] || activePreset;
+    mp3Btn.classList.toggle('playing', isPlaying);
+
+    if (activePreset && trackCatalog[activePreset]) {
+      const meta = trackCatalog[activePreset];
+      mp3Track.textContent = meta.label;
       mp3Name.hidden = false;
-      mp3Name.textContent = activePreset === 'jazz' ? 'Jazz' : (activePreset === 'cafe' ? 'Kafe' : 'DEHB');
+      mp3Name.textContent = meta.badge;
       mp3Play.disabled = false;
-      mp3Play.textContent = 'Durdur';
+      mp3Play.textContent = isPlaying ? 'Durdur' : 'Oynat';
+    } else if (fileActive && cur) {
+      mp3Track.textContent = cur.name;
+      mp3Name.hidden = false;
+      mp3Name.textContent = cur.name.replace(/\.[^.]+$/, '');
+      mp3Play.disabled = false;
+      mp3Play.textContent = !audio.paused ? 'Duraklat' : 'Oynat';
     } else {
-      mp3Track.textContent = cur ? cur.name : 'Dosya seçilmedi';
-      mp3Name.hidden = !cur;
-      mp3Name.textContent = cur ? cur.name.replace(/\.[^.]+$/, '') : '';
-      mp3Play.disabled = !cur;
-      mp3Play.textContent = (!audio.paused && !!cur) ? 'Duraklat' : 'Oynat';
+      mp3Track.textContent = 'Seçim yapılmadı';
+      mp3Name.hidden = true;
+      mp3Name.textContent = '';
+      mp3Play.disabled = !tracks.length;
+      mp3Play.textContent = 'Oynat';
     }
 
     mp3Next.hidden = tracks.length <= 1;
@@ -877,6 +897,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const playTrack = (i, auto = true) => {
     if (!tracks.length) return;
     stopSynth();
+    fileActive = true;
     idx = (i + tracks.length) % tracks.length;
     audio.src = tracks[idx].url;
     audio.loop = loop && tracks.length === 1;
@@ -892,9 +913,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const snd = btn.dataset.snd;
       if (activePreset === snd) {
         stopSynth();
+        audio.pause();
         syncMp3();
       } else {
-        startSynth(snd);
+        startPreset(snd);
       }
     });
   });
@@ -906,7 +928,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mp3Pop.hidden = !open;
     if (!mp3Pop.hidden) {
       const r = mp3Btn.getBoundingClientRect();
-      const popW = Math.min(316, window.innerWidth - 16);
+      const popW = Math.min(284, window.innerWidth - 16);
       mp3Pop.style.top = (r.bottom + 8) + 'px';
       mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - popW - 8)) + 'px';
       syncSeekUI();
@@ -924,21 +946,26 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   mp3Play.addEventListener('click', () => {
     if (activePreset) {
-      stopSynth();
+      if (trackCatalog[activePreset]?.candidates) {
+        audio.paused ? audio.play().catch(() => {}) : audio.pause();
+      } else {
+        stopSynth();
+      }
       syncMp3();
       return;
     }
     if (!tracks.length) return;
+    fileActive = true;
     audio.paused ? audio.play().catch(() => {}) : audio.pause();
     syncMp3();
   });
   mp3Next.addEventListener('click', () => playTrack(idx + 1, true));
   mp3Rew.addEventListener('click', () => {
-    if (!tracks.length || activePreset) return;
+    if (audio.paused) return;
     seekTo((audio.currentTime || 0) - 10);
   });
   mp3Fwd.addEventListener('click', () => {
-    if (!tracks.length || activePreset) return;
+    if (audio.paused) return;
     seekTo((audio.currentTime || 0) + 10);
   });
   mp3Seek.addEventListener('pointerdown', () => { seeking = true; });
@@ -953,7 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   mp3Loop.addEventListener('click', () => {
     loop = !loop;
-    audio.loop = loop && tracks.length === 1;
+    audio.loop = loop;
     syncMp3();
   });
   mp3Vol.addEventListener('input', () => {
@@ -968,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
   audio.addEventListener('play', syncMp3);
   audio.addEventListener('pause', syncMp3);
   audio.addEventListener('ended', () => {
-    if (tracks.length > 1 && (loop || idx + 1 < tracks.length)) playTrack(idx + 1, true);
+    if (fileActive && tracks.length > 1 && (loop || idx + 1 < tracks.length)) playTrack(idx + 1, true);
     else syncMp3();
   });
   document.addEventListener('pointerdown', e => {
