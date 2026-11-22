@@ -42,12 +42,20 @@
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
   #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
 
-  /* Metin kutularında yerel kopyala/yapıştır menüsünü ve seçimi zorla etkinleştir */
-  input, textarea, #settingsDlg input, #keyIn {
+  /* Tüm metin girişleri ve düzenlenebilir yazı alanlarında parmakla basılı tutunca Kopyala/Yapıştır menüsünü aç */
+  input,
+  textarea,
+  [contenteditable],
+  [contenteditable="true"],
+  [contenteditable="plaintext-only"],
+  .txt-box,
+  .text-box,
+  .note-txt,
+  .snote-b {
     user-select: text !important;
     -webkit-user-select: text !important;
     -webkit-touch-callout: default !important;
-    touch-action: auto !important;
+    touch-action: manipulation !important;
   }
   .key-box {
     display: flex;
@@ -363,16 +371,25 @@ if ('serviceWorker' in navigator) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  /* 0. API Anahtarı Yapıştır / Kopyala / Temizle ve Yerel Baloncuk Koruması */
+  /* 0. Tüm Yazı Alanlarında Kopyala/Yapıştır ve Yerel Baloncuk Koruması */
+  const isTextEditable = el => {
+    if (!el || typeof el.closest !== 'function') return false;
+    return !!el.closest('input, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], .txt-box, .text-box, .note-txt');
+  };
+
+  // Metin alanlarına dokunma/uzun basma olaylarının üst katmanlarca yutulmasını durdur
+  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'contextmenu', 'selectstart'].forEach(evt => {
+    document.addEventListener(evt, e => {
+      if (isTextEditable(e.target)) {
+        e.stopPropagation();
+      }
+    }, { capture: true });
+  });
+
   const keyIn = document.getElementById('keyIn');
   const keyPasteBtn = document.getElementById('keyPasteBtn');
   const keyCopyBtn = document.getElementById('keyCopyBtn');
   const keyClearBtn = document.getElementById('keyClearBtn');
-
-  // Giriş kutusuna dokunma / uzun basma olaylarının uygulama tarafından kesilmesini engelle
-  ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'contextmenu', 'selectstart'].forEach(evt => {
-    keyIn?.addEventListener(evt, e => e.stopPropagation());
-  });
 
   keyPasteBtn?.addEventListener('click', async () => {
     try {
@@ -615,7 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('pointercancel', onPenUp, { capture: true });
 
   window.addEventListener('contextmenu', e => {
-    if (e.target && e.target.closest('input, textarea')) return;
+    if (isTextEditable(e.target)) return;
     if (getSpenAct() === 'none') return;
     e.preventDefault();
     if (!barrelDown) {
