@@ -39,6 +39,8 @@
   #mp3Pop .mp3-track { font-size: 12px; opacity: .85; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #mp3Pop .mp3-vol { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
   #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
+  #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
+  #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
 </style>
 
 <!-- Uygulama modülleri (sıra önemli) -->
@@ -276,6 +278,7 @@
       <option value="ai">Tıklayınca Gemini Asistan'ı aç/kapat</option>
       <option value="none">Kapalı</option>
     </select>
+    <div id="spenTestBadge">S Pen tuş testi: Kalemi ekrana yaklaştırıp yan tuşa bas</div>
     <div class="lbl">Depolama</div>
     <div class="progress" id="quotaBar"><i></i></div>
     <p class="hint small" id="quotaTxt"></p>
@@ -423,68 +426,117 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!mp3Pop.hidden && !mp3Pop.contains(e.target) && !mp3Btn.contains(e.target)) mp3Pop.hidden = true;
   });
 
-  /* 3. S Pen yan tuş görev yönetimi ve Ayarlar senkronizasyonu */
+  /* 3. S Pen yan tuş görev yönetimi (Samsung / Android Chrome tam uyumlu) */
   const ON = window.ON || (window.ON = {});
   const spenSel = document.getElementById('spenAction');
-  const getSpenAct = () => (ON.settings?.spenAction) || localStorage.getItem('on-spen-action') || 'eraser-hold';
+  const spenBadge = document.getElementById('spenTestBadge');
+
+  const getSpenAct = () => localStorage.getItem('on-spen-action') || ON.settings?.spenAction || 'eraser-hold';
   const setSpenAct = val => {
-    if (ON.settings) { ON.settings.spenAction = val; ON.saveSettings?.(); }
     try { localStorage.setItem('on-spen-action', val); } catch {}
+    if (ON.settings) { ON.settings.spenAction = val; ON.saveSettings?.(); }
   };
   spenSel.value = getSpenAct();
 
   document.getElementById('openSettings')?.addEventListener('click', () => {
-    setTimeout(() => { spenSel.value = getSpenAct(); }, 0);
+    setTimeout(() => { spenSel.value = getSpenAct(); }, 10);
   });
-  spenSel.addEventListener('change', () => setSpenAct(spenSel.value));
+  spenSel.addEventListener('change', () => {
+    setSpenAct(spenSel.value);
+    ON.app?.toast?.('S Pen tuş görevi kaydedildi');
+  });
   document.getElementById('setForm')?.addEventListener('submit', () => setSpenAct(spenSel.value));
 
   const activeTool = () => document.querySelector('#toolBtns [data-tool].on')?.dataset.tool || 'pen';
   const switchTool = t => {
     if (!t || activeTool() === t) return;
-    document.querySelector(`#toolBtns [data-tool="${t}"]`)?.click();
+    const btn = document.querySelector(`#toolBtns [data-tool="${t}"]`);
+    if (!btn) return;
+    btn.click();
+    // Araç değiştirirken ayar açılır penceresinin (toolPop) açılmasını önle
+    const pop = document.getElementById('toolPop');
+    if (pop) pop.hidden = true;
   };
 
-  let barrelDown = false, prevTool = null;
-  const handleBarrelDown = () => {
+  let barrelDown = false, prevTool = null, lastToggleAt = 0;
+
+  const handleBarrelDown = (source = '') => {
+    if (spenBadge) {
+      spenBadge.classList.add('ok');
+      spenBadge.textContent = `Algılandı! (${source}) → Seçili görev aktif`;
+    }
     const act = getSpenAct();
     if (act === 'none') return;
+
     if (act === 'eraser-hold' || act === 'lasso-hold') {
       const target = act === 'eraser-hold' ? 'eraser' : 'lasso';
       const cur = activeTool();
       if (cur !== target) { prevTool = cur; switchTool(target); }
-    } else if (act === 'eraser-toggle') {
-      switchTool(activeTool() === 'eraser' ? 'pen' : 'eraser');
-    } else if (act === 'highlighter-toggle') {
-      switchTool(activeTool() === 'highlighter' ? 'pen' : 'highlighter');
-    } else if (act === 'undo') {
-      document.getElementById('undo')?.click();
-      ON.app?.toast?.('Geri alındı (S Pen)');
-    } else if (act === 'ai') {
-      document.getElementById('aiOpen')?.click();
+    } else {
+      const now = Date.now();
+      if (now - lastToggleAt < 250) return;
+      lastToggleAt = now;
+      if (act === 'eraser-toggle') {
+        switchTool(activeTool() === 'eraser' ? 'pen' : 'eraser');
+      } else if (act === 'highlighter-toggle') {
+        switchTool(activeTool() === 'highlighter' ? 'pen' : 'highlighter');
+      } else if (act === 'undo') {
+        document.getElementById('undo')?.click();
+        ON.app?.toast?.('Geri alındı (S Pen)');
+      } else if (act === 'ai') {
+        document.getElementById('aiOpen')?.click();
+      }
     }
   };
+
   const handleBarrelUp = () => {
     if (prevTool) { switchTool(prevTool); prevTool = null; }
   };
 
+  // Samsung S Pen hem buttons=32 (eraser/barrel) hem buttons=2 (sağ tık) gönderebilir
+  const isSpenSidePressed = e => {
+    if (e.pointerType !== 'pen') return false;
+    return (e.buttons & 32) !== 0 || (e.buttons & 2) !== 0 || e.button === 5 || e.button === 2;
+  };
+
   window.addEventListener('pointerdown', e => {
     if (e.pointerType !== 'pen') return;
-    if (((e.buttons & 32) !== 0 || e.button === 5) && !barrelDown) { barrelDown = true; handleBarrelDown(); }
+    if (isSpenSidePressed(e) && !barrelDown) {
+      barrelDown = true;
+      handleBarrelDown(`down b:${e.button} bs:${e.buttons}`);
+    }
   }, { capture: true });
+
   window.addEventListener('pointermove', e => {
     if (e.pointerType !== 'pen') return;
-    const pressed = (e.buttons & 32) !== 0;
-    if (pressed && !barrelDown) { barrelDown = true; handleBarrelDown(); }
-    else if (!pressed && barrelDown) { barrelDown = false; handleBarrelUp(); }
+    const pressed = (e.buttons & 32) !== 0 || (e.buttons & 2) !== 0;
+    if (pressed && !barrelDown) {
+      barrelDown = true;
+      handleBarrelDown(`hover/move bs:${e.buttons}`);
+    } else if (!pressed && barrelDown) {
+      barrelDown = false;
+      handleBarrelUp();
+    }
   }, { capture: true });
+
   const onPenUp = e => {
-    if (e.pointerType === 'pen' && barrelDown) { barrelDown = false; handleBarrelUp(); }
+    if (e.pointerType !== 'pen') return;
+    const stillPressed = (e.buttons & 32) !== 0 || (e.buttons & 2) !== 0;
+    if (barrelDown && !stillPressed) {
+      barrelDown = false;
+      handleBarrelUp();
+    }
   };
   window.addEventListener('pointerup', onPenUp, { capture: true });
   window.addEventListener('pointercancel', onPenUp, { capture: true });
+
+  // Android S Pen yan tuşuna basınca sistemin gönderdiği contextmenu / auxclick olayını yakala
   window.addEventListener('contextmenu', e => {
-    if (getSpenAct() !== 'none' && (barrelDown || e.pointerType === 'pen')) e.preventDefault();
+    if (getSpenAct() === 'none') return;
+    e.preventDefault();
+    if (!barrelDown) {
+      handleBarrelDown('contextmenu');
+    }
   }, { capture: true });
 });
 </script>
