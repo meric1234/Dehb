@@ -35,8 +35,12 @@
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #mp3Pop { width: 280px; }
+  #mp3Pop { width: 296px; }
   #mp3Pop .mp3-track { font-size: 12px; opacity: .85; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mp3Pop .mp3-seek-box { margin: 8px 0; }
+  #mp3Pop .mp3-seek-row { display: flex; align-items: center; gap: 6px; }
+  #mp3Pop .mp3-seek-row input[type="range"] { flex: 1; accent-color: #3b82f6; }
+  #mp3Pop .mp3-time { display: flex; justify-content: space-between; font-size: 11px; opacity: .75; margin-top: 3px; font-variant-numeric: tabular-nums; }
   #mp3Pop .mp3-vol { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
   #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
@@ -350,6 +354,17 @@
     <button type="button" class="btn" id="mp3Play" disabled>Oynat</button>
     <button type="button" class="btn" id="mp3Next" hidden>Sonraki</button>
   </div>
+  <div class="mp3-seek-box">
+    <div class="mp3-seek-row">
+      <button type="button" class="btn ghost" id="mp3Rew" disabled title="10 saniye geri">-10s</button>
+      <input type="range" id="mp3Seek" min="0" max="100" step="0.1" value="0" disabled>
+      <button type="button" class="btn ghost" id="mp3Fwd" disabled title="10 saniye ileri">+10s</button>
+    </div>
+    <div class="mp3-time">
+      <span id="mp3CurTime">00:00</span>
+      <span id="mp3DurTime">00:00</span>
+    </div>
+  </div>
   <div class="mp3-vol">
     <span>Ses</span>
     <input type="range" id="mp3Vol" min="0" max="1" step="0.05" value="0.6">
@@ -377,7 +392,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return !!el.closest('input, textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], .txt-box, .text-box, .note-txt');
   };
 
-  // Metin alanlarına dokunma/uzun basma olaylarının üst katmanlarca yutulmasını durdur
   ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'contextmenu', 'selectstart'].forEach(evt => {
     document.addEventListener(evt, e => {
       if (isTextEditable(e.target)) {
@@ -445,23 +459,59 @@ document.addEventListener('DOMContentLoaded', () => {
   hideBottomTimerBar();
   setTimeout(hideBottomTimerBar, 300);
 
-  /* 2. Üst bar MP3 oynatıcı */
+  /* 2. Üst bar MP3 oynatıcı (zaman çubuğu + -10s / +10s ileri geri alma) */
   const mp3Btn = document.getElementById('mp3Btn');
   const mp3Pop = document.getElementById('mp3Pop');
   const mp3In = document.getElementById('mp3In');
   const mp3Pick = document.getElementById('mp3Pick');
   const mp3Play = document.getElementById('mp3Play');
   const mp3Next = document.getElementById('mp3Next');
+  const mp3Rew = document.getElementById('mp3Rew');
+  const mp3Fwd = document.getElementById('mp3Fwd');
+  const mp3Seek = document.getElementById('mp3Seek');
+  const mp3CurTime = document.getElementById('mp3CurTime');
+  const mp3DurTime = document.getElementById('mp3DurTime');
   const mp3Loop = document.getElementById('mp3Loop');
   const mp3Vol = document.getElementById('mp3Vol');
   const mp3Track = document.getElementById('mp3Track');
   const mp3Name = document.getElementById('mp3Name');
 
   const audio = new Audio();
-  let tracks = [], idx = 0, loop = true;
+  let tracks = [], idx = 0, loop = true, seeking = false;
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
   audio.volume = Number.isFinite(savedVol) ? savedVol : 0.6;
   mp3Vol.value = String(audio.volume);
+
+  const fmtTime = sec => {
+    if (!Number.isFinite(sec) || sec < 0) return '00:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  const syncSeekUI = () => {
+    const hasTrack = !!tracks[idx];
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    mp3Rew.disabled = !hasTrack;
+    mp3Fwd.disabled = !hasTrack;
+    mp3Seek.disabled = !hasTrack || dur <= 0;
+    if (dur > 0) {
+      mp3Seek.max = String(dur);
+      if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, dur));
+    } else if (!seeking) {
+      mp3Seek.value = '0';
+    }
+    mp3CurTime.textContent = fmtTime(seeking ? parseFloat(mp3Seek.value) : audio.currentTime);
+    mp3DurTime.textContent = fmtTime(dur);
+  };
+
+  const seekTo = sec => {
+    const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const clamped = dur > 0 ? Math.max(0, Math.min(sec, dur)) : Math.max(0, sec);
+    audio.currentTime = clamped;
+    mp3Seek.value = String(clamped);
+    mp3CurTime.textContent = fmtTime(clamped);
+  };
 
   const syncMp3 = () => {
     const cur = tracks[idx];
@@ -474,6 +524,7 @@ document.addEventListener('DOMContentLoaded', () => {
     mp3Play.textContent = playing ? 'Duraklat' : 'Oynat';
     mp3Next.hidden = tracks.length <= 1;
     mp3Loop.textContent = loop ? 'Döngü: Açık' : 'Döngü: Kapalı';
+    syncSeekUI();
   };
 
   const playTrack = (i, auto = true) => {
@@ -481,6 +532,9 @@ document.addEventListener('DOMContentLoaded', () => {
     idx = (i + tracks.length) % tracks.length;
     audio.src = tracks[idx].url;
     audio.loop = loop && tracks.length === 1;
+    mp3Seek.value = '0';
+    mp3CurTime.textContent = '00:00';
+    mp3DurTime.textContent = '00:00';
     if (auto) audio.play().catch(() => {});
     syncMp3();
   };
@@ -489,10 +543,11 @@ document.addEventListener('DOMContentLoaded', () => {
     e.stopPropagation();
     const r = mp3Btn.getBoundingClientRect();
     mp3Pop.style.top = (r.bottom + 8) + 'px';
-    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 292)) + 'px';
+    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 308)) + 'px';
     const open = mp3Pop.hidden;
     document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
     mp3Pop.hidden = !open;
+    if (!mp3Pop.hidden) syncSeekUI();
   });
 
   mp3Pick.addEventListener('click', () => mp3In.click());
@@ -510,6 +565,24 @@ document.addEventListener('DOMContentLoaded', () => {
     syncMp3();
   });
   mp3Next.addEventListener('click', () => playTrack(idx + 1, true));
+  mp3Rew.addEventListener('click', () => {
+    if (!tracks.length) return;
+    seekTo((audio.currentTime || 0) - 10);
+  });
+  mp3Fwd.addEventListener('click', () => {
+    if (!tracks.length) return;
+    seekTo((audio.currentTime || 0) + 10);
+  });
+  mp3Seek.addEventListener('pointerdown', () => { seeking = true; });
+  mp3Seek.addEventListener('input', () => {
+    mp3CurTime.textContent = fmtTime(parseFloat(mp3Seek.value));
+  });
+  mp3Seek.addEventListener('change', () => {
+    seekTo(parseFloat(mp3Seek.value));
+    seeking = false;
+  });
+  window.addEventListener('pointerup', () => { seeking = false; });
+
   mp3Loop.addEventListener('click', () => {
     loop = !loop;
     audio.loop = loop && tracks.length === 1;
@@ -519,6 +592,9 @@ document.addEventListener('DOMContentLoaded', () => {
     audio.volume = parseFloat(mp3Vol.value) || 0;
     try { localStorage.setItem('on-mp3-vol', String(audio.volume)); } catch {}
   });
+  audio.addEventListener('loadedmetadata', syncSeekUI);
+  audio.addEventListener('durationchange', syncSeekUI);
+  audio.addEventListener('timeupdate', syncSeekUI);
   audio.addEventListener('play', syncMp3);
   audio.addEventListener('pause', syncMp3);
   audio.addEventListener('ended', () => {
