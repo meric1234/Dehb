@@ -1,8 +1,9 @@
 /* =====================================================================
-   Odak Not — app.js
+   Odak Not — app.js (Obsidian Studio & Focus Suite Edition)
    Uygulama orkestrasyonu: kütüphane, defter yükleme/kaydetme, kamera,
    giriş (S Pen / dokunma / fare), araçlar, kement, nesneler, kenar paneli,
-   odak sayacı, zen modu, mini harita, dışa aktarma, ayarlar.
+   gelişmiş odak sayacı + kronometre + odak sesleri, zen modu, mini harita,
+   dışa aktarma, ayarlar.
    ===================================================================== */
 'use strict';
 (() => {
@@ -414,7 +415,7 @@
     if (dirtyPages.size || metaDirty) scheduleSave();
   }
   app.saveNow = saveNow;
-  addEventListener('pagehide', () => { saveNow(); });
+  addEventListener('pagehide', () => { saveNow(); FocusAudio.stop(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
 
   /* ================= Kütüphane ================= */
@@ -1578,31 +1579,286 @@
     clampPan(); applyCamera(); refreshAfterZoom();
   }, { passive: false });
 
-  /* ================= Odak sayacı (sessiz) ================= */
-  let timer = LS.get('on-timer', null), timerTick = 0;
+  /* ================= Odak Sayacı, Kronometre & Odak Sesleri ================= */
+  const FocusAudio = (() => {
+    let ctx = null, gain = null, srcNode = null, oscA = null, oscB = null;
+    const state = Object.assign({ mode: 'off', vol: 0.35 }, LS.get('on-focus-audio', {}));
+    const save = () => LS.set('on-focus-audio', state);
+
+    function ensureCtx() {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return null;
+        ctx = new AC();
+      }
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      return ctx;
+    }
+
+    function stopNodes() {
+      try { srcNode && srcNode.stop(); } catch {}
+      try { srcNode && srcNode.disconnect(); } catch {}
+      try { oscA && oscA.stop(); } catch {}
+      try { oscB && oscB.stop(); } catch {}
+      srcNode = oscA = oscB = null;
+    }
+
+    function apply(mode = state.mode) {
+      state.mode = mode;
+      save();
+      stopNodes();
+      if (mode === 'off') return;
+      const c = ensureCtx();
+      if (!c) return;
+      gain = c.createGain();
+      gain.gain.value = state.vol * (mode === 'gamma' ? 0.14 : 0.35);
+      gain.connect(c.destination);
+
+      if (mode === 'brown' || mode === 'rain') {
+        const len = c.sampleRate * 3;
+        const buf = c.createBuffer(1, len, c.sampleRate);
+        const out = buf.getChannelData(0);
+        if (mode === 'brown') {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            out[i] = (last + 0.02 * w) / 1.02;
+            last = out[i];
+            out[i] *= 3.2;
+          }
+        } else {
+          let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            b0 = 0.99886 * b0 + w * 0.0555179;
+            b1 = 0.99332 * b1 + w * 0.0750759;
+            b2 = 0.96900 * b2 + w * 0.1538520;
+            b3 = 0.86650 * b3 + w * 0.3104856;
+            b4 = 0.55000 * b4 + w * 0.5329522;
+            b5 = -0.7616 * b5 - w * 0.0168980;
+            out[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.08;
+            b6 = w * 0.115926;
+          }
+        }
+        const filter = c.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = mode === 'brown' ? 320 : 1400;
+        srcNode = c.createBufferSource();
+        srcNode.buffer = buf;
+        srcNode.loop = true;
+        srcNode.connect(filter);
+        filter.connect(gain);
+        srcNode.start();
+      } else if (mode === 'gamma') {
+        oscA = c.createOscillator();
+        oscB = c.createOscillator();
+        oscA.type = 'sine'; oscB.type = 'sine';
+        oscA.frequency.value = 200;
+        oscB.frequency.value = 240; // 40 Hz binaural fark
+        oscA.connect(gain); oscB.connect(gain);
+        oscA.start(); oscB.start();
+      }
+    }
+
+    function setVol(v) {
+      state.vol = clamp(v, 0, 1);
+      save();
+      if (gain && ctx) gain.gain.setTargetAtTime(state.vol * (state.mode === 'gamma' ? 0.14 : 0.35), ctx.currentTime, 0.05);
+    }
+
+    function chime() {
+      const c = ensureCtx();
+      if (!c) return;
+      [523.25, 659.25, 783.99].forEach((freq, idx) => {
+        const o = c.createOscillator(), g = c.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        const t0 = c.currentTime + idx * 0.14;
+        g.gain.setValueAtTime(0.001, t0);
+        g.gain.exponentialRampToValueAtTime(0.14, t0 + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+        o.connect(g); g.connect(c.destination);
+        o.start(t0); o.stop(t0 + 0.95);
+      });
+    }
+
+    return { state, apply, setVol, chime, stop: stopNodes };
+  })();
+
+  let timer = LS.get('on-timer', null);
+  let timerTab = timer?.kind === 'sw' ? 'sw' : 'cd';
+  let chimedFor = 0;
+
+  const fmtClock = ms => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const pad = n => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+  };
+
   function renderTimer() {
     const btn = $('timerBtn'), bar = $('timerBar').firstElementChild;
     btn.classList.remove('done');
-    if (!timer) { $('timerTxt').textContent = ''; bar.style.width = '0'; $('timerStop').hidden = true; return; }
-    $('timerStop').hidden = false;
-    const left = timer.end - Date.now();
-    if (left <= 0) { $('timerTxt').textContent = 'Mola'; btn.classList.add('done'); bar.style.width = '100%'; return; }
-    $('timerTxt').textContent = `${Math.ceil(left / 60000)} dk`;
+    if (!timer) {
+      $('timerTxt').textContent = '';
+      bar.style.width = '0';
+      const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = timerTab === 'sw' ? '00:00' : '25:00';
+      return;
+    }
+    if (timer.kind === 'sw') {
+      const elapsed = timer.paused ? timer.elapsed : (timer.elapsed + (Date.now() - timer.started));
+      const txt = fmtClock(elapsed);
+      $('timerTxt').textContent = txt;
+      bar.style.width = ((elapsed % 3600000) / 36000).toFixed(1) + '%';
+      const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = txt;
+      return;
+    }
+    const left = timer.paused ? timer.rem : (timer.end - Date.now());
+    if (left <= 0) {
+      $('timerTxt').textContent = 'Mola';
+      btn.classList.add('done');
+      bar.style.width = '100%';
+      const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = '00:00';
+      if (chimedFor !== timer.end) {
+        chimedFor = timer.end;
+        FocusAudio.chime();
+        app.toast('Odak süresi tamamlandı — kısa bir mola ver', 3200);
+      }
+      return;
+    }
+    const txt = fmtClock(left);
+    $('timerTxt').textContent = txt;
     bar.style.width = (100 * (1 - left / (timer.total * 60000))).toFixed(1) + '%';
+    const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = txt;
   }
-  function startTimer(min) { timer = { end: Date.now() + min * 60000, total: min }; LS.set('on-timer', timer); renderTimer(); $('timerPop').hidden = true; app.toast(`${min} dakikalık odak başladı`); }
+
+  function startTimer(min) {
+    min = clamp(Math.round(min) || 25, 1, 180);
+    timer = { kind: 'cd', end: Date.now() + min * 60000, total: min, paused: false };
+    chimedFor = 0;
+    LS.set('on-timer', timer);
+    renderTimer();
+    buildTimerPop();
+    app.toast(`${min} dakikalık odak sayacı başladı`);
+  }
+
+  function togglePauseTimer() {
+    if (!timer) {
+      if (timerTab === 'sw') {
+        timer = { kind: 'sw', started: Date.now(), elapsed: 0, paused: false };
+        LS.set('on-timer', timer); renderTimer(); buildTimerPop();
+      } else startTimer(25);
+      return;
+    }
+    if (timer.kind === 'sw') {
+      if (timer.paused) { timer.started = Date.now(); timer.paused = false; }
+      else { timer.elapsed += Date.now() - timer.started; timer.paused = true; }
+    } else {
+      if (timer.paused) { timer.end = Date.now() + timer.rem; timer.paused = false; }
+      else { timer.rem = Math.max(0, timer.end - Date.now()); timer.paused = true; }
+    }
+    LS.set('on-timer', timer);
+    renderTimer();
+    buildTimerPop();
+  }
+
+  function resetTimerAll() {
+    timer = null;
+    LS.set('on-timer', null);
+    renderTimer();
+    buildTimerPop();
+  }
+
+  function buildTimerPop() {
+    const pop = $('timerPop');
+    const isSw = timerTab === 'sw';
+    const running = timer && !timer.paused && (timer.kind === 'sw' || timer.end > Date.now());
+    const curVal = !timer ? (isSw ? '00:00' : '25:00') : (timer.kind === 'sw'
+      ? fmtClock(timer.paused ? timer.elapsed : timer.elapsed + (Date.now() - timer.started))
+      : fmtClock(Math.max(0, timer.paused ? timer.rem : timer.end - Date.now())));
+    const audioModes = [['off', 'Sessiz'], ['brown', 'Derin odak'], ['rain', 'Yağmur'], ['gamma', '40 Hz']];
+
+    pop.style.width = '276px';
+    pop.innerHTML = `
+      <div style="display:flex;gap:4px;margin-bottom:10px;background:rgba(255,255,255,.04);padding:3px;border-radius:10px">
+        <button type="button" data-tmode="cd" style="flex:1;padding:6px;border-radius:8px;font-size:12px;font-weight:600;background:${!isSw ? 'var(--accent,#7B52DB)' : 'transparent'};color:${!isSw ? '#fff' : 'inherit'}">Geri sayım</button>
+        <button type="button" data-tmode="sw" style="flex:1;padding:6px;border-radius:8px;font-size:12px;font-weight:600;background:${isSw ? 'var(--accent,#7B52DB)' : 'transparent'};color:${isSw ? '#fff' : 'inherit'}">Kronometre</button>
+      </div>
+      <div style="text-align:center;padding:6px 0 10px">
+        <div id="tmLive" style="font-variant-numeric:tabular-nums;font-size:28px;font-weight:700;letter-spacing:.03em">${curVal}</div>
+      </div>
+      ${!isSw ? `
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px">
+          ${[15, 25, 45, 60].map(m => `<button type="button" data-min="${m}" style="padding:6px 0;border-radius:8px;border:1px solid var(--line,rgba(255,255,255,.1));font-size:12px;font-weight:600">${m} dk</button>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:10px">
+          <input id="tmCustomIn" type="number" min="1" max="180" placeholder="Özel dk" style="flex:1;min-width:0;padding:6px 8px;border-radius:8px;border:1px solid var(--line,rgba(255,255,255,.12));background:rgba(0,0,0,.2);color:inherit;font-size:12px">
+          <button type="button" id="tmCustomGo" style="padding:6px 12px;border-radius:8px;background:var(--accent,#7B52DB);color:#fff;font-size:12px;font-weight:600">Başlat</button>
+        </div>
+      ` : ''}
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button type="button" id="tmToggle" style="flex:1;padding:7px;border-radius:8px;background:var(--accent,#7B52DB);color:#fff;font-size:12px;font-weight:600">${running ? 'Duraklat' : (timer ? 'Devam et' : 'Başlat')}</button>
+        <button type="button" id="timerStop" style="padding:7px 12px;border-radius:8px;border:1px solid var(--line,rgba(255,255,255,.12));font-size:12px">Sıfırla</button>
+      </div>
+      <div style="border-top:1px solid var(--line,rgba(255,255,255,.08));padding-top:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:11px;opacity:.75">
+          <span>Odak Sesi (Çevrimdışı)</span>
+          <span>${Math.round(FocusAudio.state.vol * 100)}%</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px">
+          ${audioModes.map(([id, lbl]) => `<button type="button" data-snd="${id}" style="padding:5px 2px;border-radius:7px;font-size:11px;border:1px solid ${FocusAudio.state.mode === id ? 'var(--accent,#7B52DB)' : 'var(--line,rgba(255,255,255,.1))'};background:${FocusAudio.state.mode === id ? 'rgba(123,82,219,.22)' : 'transparent'}">${lbl}</button>`).join('')}
+        </div>
+        <input type="range" id="tmVol" min="0" max="1" step="0.05" value="${FocusAudio.state.vol}" style="width:100%">
+      </div>
+    `;
+  }
+
   $('timerBtn').onclick = e => {
     e.stopPropagation();
-    if (timer && timer.end <= Date.now()) { timer = null; LS.set('on-timer', null); renderTimer(); return; }
-    const pop = $('timerPop'); pop.hidden = !pop.hidden;
-    const r = $('timerBtn').getBoundingClientRect();
-    pop.style.top = r.bottom + 8 + 'px'; pop.style.left = clamp(r.left - 80, 8, innerWidth - 260) + 'px'; pop.style.right = 'auto';
+    if (timer && timer.kind === 'cd' && !timer.paused && timer.end <= Date.now()) {
+      resetTimerAll();
+      return;
+    }
+    const pop = $('timerPop');
+    const opening = pop.hidden;
+    app.closePanelsExcept('timer');
+    pop.hidden = !opening;
+    if (!pop.hidden) {
+      buildTimerPop();
+      const r = $('timerBtn').getBoundingClientRect();
+      pop.style.top = r.bottom + 8 + 'px';
+      pop.style.left = clamp(r.left - 110, 8, innerWidth - 292) + 'px';
+      pop.style.right = 'auto';
+    }
   };
+  $('timerPop').addEventListener('pointerdown', e => e.stopPropagation());
   $('timerPop').onclick = e => {
-    const b = e.target.closest('[data-min]'); if (b) startTimer(+b.dataset.min);
-    if (e.target.closest('#timerStop')) { timer = null; LS.set('on-timer', null); renderTimer(); $('timerPop').hidden = true; }
+    const modeBtn = e.target.closest('[data-tmode]');
+    if (modeBtn) {
+      timerTab = modeBtn.dataset.tmode;
+      if (timer && timer.kind !== timerTab) resetTimerAll();
+      else buildTimerPop();
+      return;
+    }
+    const minBtn = e.target.closest('[data-min]');
+    if (minBtn) { timerTab = 'cd'; startTimer(+minBtn.dataset.min); return; }
+    if (e.target.closest('#tmCustomGo')) {
+      const v = +$('tmCustomIn')?.value;
+      if (v > 0) { timerTab = 'cd'; startTimer(v); }
+      return;
+    }
+    if (e.target.closest('#tmToggle')) { togglePauseTimer(); return; }
+    if (e.target.closest('#timerStop')) { resetTimerAll(); return; }
+    const sndBtn = e.target.closest('[data-snd]');
+    if (sndBtn) { FocusAudio.apply(sndBtn.dataset.snd); buildTimerPop(); }
   };
-  timerTick = setInterval(renderTimer, 15000);
+  $('timerPop').oninput = e => {
+    if (e.target.id === 'tmVol') {
+      FocusAudio.setVol(+e.target.value);
+      const lbl = $('timerPop').querySelector('span:last-child');
+      if (lbl && lbl.textContent.endsWith('%')) lbl.textContent = Math.round(FocusAudio.state.vol * 100) + '%';
+    }
+  };
+  setInterval(renderTimer, 1000);
 
   /* ================= Zen modu ================= */
   function setZen(on) {
@@ -1912,9 +2168,15 @@
   /* ================= Ayarlar, depolama, yedek ================= */
   app.openSettings = async () => {
     const s = ON.settings;
+    const sel = $('modelIn');
+    // Geçersiz eski varsayılan model varsa seçeneklerden kaldır, güncel modelleri ekle
+    [...sel.options].forEach(o => { if (/^gemini-3\./.test(o.value)) o.remove(); });
+    for (const [val, label] of [['gemini-2.5-flash', 'Gemini 2.5 Flash (Önerilen)'], ['gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite (Hızlı / Yüksek Kota)'], ['gemini-2.5-pro', 'Gemini 2.5 Pro (Derin Analiz)']]) {
+      if (![...sel.options].some(o => o.value === val)) sel.add(new Option(label, val));
+    }
+    if (![...sel.options].some(o => o.value === s.model)) sel.add(new Option(s.model + ' (otomatik seçildi)', s.model));
     $('keyIn').value = s.key; $('modelCustom').value = s.custom; $('testMsg').textContent = '';
-    if (![...$('modelIn').options].some(o => o.value === s.model)) $('modelIn').add(new Option(s.model + ' (otomatik seçildi)', s.model));
-    $('modelIn').value = s.model;
+    sel.value = s.model;
     $('fingerDraw').checked = !!s.fingerDraw; $('showMini').checked = s.minimap !== false;
     $('backupMsg').textContent = '';
     app.openModal('settingsDlg');
