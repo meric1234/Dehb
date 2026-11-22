@@ -186,7 +186,6 @@
     const L = computeLayout(app.nb);
     app.layout = L.layout; app.docW = L.docW; app.docH = L.docH;
   }
-  // Sayfa yapısı değişince çizgileri yeni kökenlerine taşı (sayfa nesnesi kimliğiyle eşleştirme)
   function withRelayout(mutate) {
     const old = new Map(app.nb.pages.map((p, i) => [p, app.layout[i]]));
     const oldPages = app.pages.slice(), oldPageObjs = app.nb.pages.slice();
@@ -377,39 +376,55 @@
   }
 
   /* ================= Kaydetme ================= */
-  function markDirty(p) { dirtyPages.add(p); scheduleSave(); }
+  function markDirty(p) {
+    if (p == null || p < 0) p = 0;
+    dirtyPages.add(p);
+    scheduleSave();
+  }
   function markMetaDirty() { metaDirty = true; scheduleSave(); }
   app.markMetaDirty = markMetaDirty;
   function scheduleSave() {
-    $('saved').textContent = 'Kaydediliyor…';
-    clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 800);
+    if ($('saved')) $('saved').textContent = 'Kaydediliyor…';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 120);
   }
   async function saveNow() {
     clearTimeout(saveTimer);
-    if (!app.nb || (!dirtyPages.size && !metaDirty)) { $('saved').textContent = 'Kaydedildi'; return; }
-    if (saving) { saveTimer = setTimeout(saveNow, 300); return; }
+    if (!app.nb || (!dirtyPages.size && !metaDirty)) {
+      if ($('saved')) $('saved').textContent = 'Kaydedildi';
+      return;
+    }
+    if (saving) { saveTimer = setTimeout(saveNow, 150); return; }
     saving = true;
     const nb = app.nb;
+    const pagesNow = [...dirtyPages];
+    const hadMeta = metaDirty;
     try {
-      const pagesNow = [...dirtyPages]; dirtyPages.clear(); metaDirty = false;
       for (const p of pagesNow) {
-        if (p >= nb.pages.length) continue;
+        if (p < 0 || p >= nb.pages.length) {
+          dirtyPages.delete(p);
+          continue;
+        }
         const o = app.pageOrigin(p);
         const list = pageStrokes(p).filter(s => s.pts);
         const enc = await ON.encodeStrokes(list, o.x, o.y);
         await Store.put('pages', { notebookId: nb.id, pageIndex: p, data: enc.data, gz: enc.gz, n: list.length });
         nb.pages[p].v = (nb.pages[p].v || 0) + 1;
+        dirtyPages.delete(p);
         if (thumbIO) refreshThumb(p);
       }
-      nb.updated = Date.now();
-      await Store.put('notebooks', nb);
-      const i = app.notebooks.findIndex(n => n.id === nb.id);
-      if (i >= 0) app.notebooks[i] = nb; else app.notebooks.push(nb);
-      $('saved').textContent = 'Kaydedildi';
-      renderNotebookList();
+      if (hadMeta || pagesNow.length) {
+        nb.updated = Date.now();
+        await Store.put('notebooks', nb);
+        metaDirty = false;
+        const i = app.notebooks.findIndex(n => n.id === nb.id);
+        if (i >= 0) app.notebooks[i] = nb; else app.notebooks.push(nb);
+        renderNotebookList();
+      }
+      if ($('saved')) $('saved').textContent = 'Kaydedildi';
     } catch (err) {
       console.error(err);
-      $('saved').textContent = 'Kaydedilemedi';
+      if ($('saved')) $('saved').textContent = 'Kaydedilemedi';
       app.toast('Kayıt hatası: ' + (err.message || err), 4000);
     } finally { saving = false; }
     if (dirtyPages.size || metaDirty) scheduleSave();
@@ -518,7 +533,6 @@
         app.virt = new ON.PDFPageVirtualizer(app.engine, { root: stage, getZoom: () => app.cam.z, maxActive: 4 });
       } catch (err) { app.toast(err.message || 'PDF açılamadı', 5000); }
     }
-    // Çizgileri yükle
     const recs = await Store.all('pages', 'notebookId', nb.id);
     app.pages = nb.pages.map(() => []);
     await Promise.all(recs.map(async rec => {
@@ -629,7 +643,7 @@
   });
   const pressureOf = e => e.pointerType === 'pen' ? (e.pressure > 0 ? e.pressure : 0.5) : 0.5;
   const DRAW_TOOLS = new Set(['pen', 'highlighter', 'eraser', 'lasso', 'laser']);
-  let fingerStroke = null; // parmakla çizimde ilk dokunuş
+  let fingerStroke = null;
 
   stage.addEventListener('pointerdown', onDown, true);
   stage.addEventListener('pointermove', onMove, true);
@@ -645,7 +659,6 @@
     hidePop(); $('timerPop').hidden = true;
     const pt = app.screenToWorld(e.clientX, e.clientY);
 
-    // Kement kutusu: tutamaçları capture fazında yakala (kalem ve parmak)
     if (gizmo) {
       const hit = gizmo.hitTest(pt.x, pt.y, app.cam.z);
       if (hit) {
@@ -662,9 +675,8 @@
     }
 
     if (e.pointerType === 'touch') {
-      if (penBusy()) return;                     // avuç içi koruması
+      if (penBusy()) return;
       if (active && active.type === 'stroke' && active.finger) {
-        // İkinci parmak geldi: parmak çizimini iptal et, jeste dön
         cur = null; active = null; requestLive();
         gesture.down(fingerStroke); fingerStroke = null;
         gesture.down(e); return;
@@ -698,7 +710,7 @@
     e.preventDefault();
     const wasEditing = document.activeElement && document.activeElement.isContentEditable;
     if (wasEditing) document.activeElement.blur();
-    if (wasEditing && tool === 'text') return;   // önce yazılanı kaydet, yeni kutu açma
+    if (wasEditing && tool === 'text') return;
     startTool(e, pt, sideBtn || rightMouse ? 'eraser' : tool, false, sideBtn);
   }
 
@@ -815,7 +827,6 @@
       if (n >= 3 && Math.hypot(w.x - cur.arr[n - 3], w.y - cur.arr[n - 2]) < minD) { cur.arr[n - 1] = Math.max(cur.arr[n - 1], p); continue; }
       cur.arr.push(w.x, w.y, p);
     }
-    // Hold-to-Snap: 4 px'ten fazla hareket zamanlayıcıyı sıfırlar
     if (Math.hypot(e.clientX - cur.hold.x, e.clientY - cur.hold.y) > 4) { cur.hold = { x: e.clientX, y: e.clientY }; armSnap(); }
     requestLive();
   }
@@ -839,7 +850,6 @@
     let pts = cur.shapePts || ON.rdp(new Float32Array(cur.arr), 0.3);
     let flat = false;
     if (cur.tool === 'highlighter' && tools.hlStraight && pts.length >= 6) {
-      // Fosforlu: neredeyse düzse düz çizgiye hizala (yataysa tam yatay)
       const n = pts.length / 3;
       let len = 0; for (let i = 1; i < n; i++) len += Math.hypot(pts[i * 3] - pts[i * 3 - 3], pts[i * 3 + 1] - pts[i * 3 - 2]);
       const x0 = pts[0], x1 = pts[(n - 1) * 3], y1 = pts[(n - 1) * 3 + 1];
@@ -858,6 +868,7 @@
     const o = app.pageOrigin(s.page);
     app.nb.last = { page: s.page, x: s.bbox.maxX - o.x, y: s.bbox.maxY - o.y };
     markMetaDirty();
+    saveNow();
     requestLive();
   }
 
@@ -884,7 +895,6 @@
         if (ON.strokeHit(s, a.x, a.y, b.x, b.y, r)) remove(s);
       }
     } else {
-      // Kısmi silgi: süpürme yolunu r/2 aralıklarla örnekle, çizgileri böl
       const d = Math.hypot(b.x - a.x, b.y - a.y), steps = Math.max(1, Math.ceil(d / (r * 0.5)));
       for (let k = 1; k <= steps; k++) {
         const cx = a.x + (b.x - a.x) * k / steps, cy = a.y + (b.y - a.y) * k / steps;
@@ -954,7 +964,6 @@
     const rect = { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY };
     const scale = Math.min(2.5, 3000 / Math.max(rect.w, rect.h));
     app.toast('Bölge hazırlanıyor…');
-    // Offscreen HiDPI kırpma: PDF dilimi + yalnızca seçili vektör çizgiler
     const canvas = await renderRegion(liveData(), rect, scale, { print: true, strokeFilter: new Set(gizmo.strokes), cards: false });
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
     const b64 = await blobToB64(blob);
@@ -1217,7 +1226,6 @@
     $('undo').style.opacity = app.history && app.history.canUndo ? 1 : 0.35;
     $('redo').style.opacity = app.history && app.history.canRedo ? 1 : 0.35;
   }
-  // Açılır araç menüsü
   let popKind = null;
   function hidePop() { $('toolPop').hidden = true; popKind = null; }
   function togglePop(kind, anchorBtn) {
@@ -1258,7 +1266,6 @@
       if (e.target.id === 'erHl') { tools.eraseHlOnly = e.target.checked; saveTools(); }
     };
   }
-  // Sürüklenebilir / katlanabilir araç çubuğu
   (() => {
     const bar = $('tools'), grip = $('toolGrip');
     const place = p => { bar.classList.add('placed'); bar.style.left = p.x + 'px'; bar.style.top = p.y + 'px'; bar.style.bottom = 'auto'; };
@@ -1654,7 +1661,7 @@
         oscB = c.createOscillator();
         oscA.type = 'sine'; oscB.type = 'sine';
         oscA.frequency.value = 200;
-        oscB.frequency.value = 240; // 40 Hz binaural fark
+        oscB.frequency.value = 240;
         oscA.connect(gain); oscB.connect(gain);
         oscA.start(); oscB.start();
       }
@@ -1950,7 +1957,6 @@
       g.fillText(line, x, yy); yy += lh;
     }
   }
-  // data: {nb, layout, pages, engine}; rect: dünya; opts: {print, cards, strokeFilter}
   async function renderRegion(data, rect, scale, opts = {}) {
     const nb = data.nb, inf = nb.mode === 'infinite';
     const c = document.createElement('canvas');
@@ -1978,14 +1984,12 @@
       } else {
         ON.drawPaper(g, inf ? { x: rect.x, y: rect.y, w: rect.w, h: rect.h } : L, nb.paper, { forceLight: opts.print, paged: !inf, originX: inf ? 0 : L.x, originY: inf ? 0 : L.y });
       }
-      // nesneler
       for (const o of nb.objects) {
         if (o.page !== i) continue;
         const ox = (inf ? 0 : L.x) + o.x, oy = (inf ? 0 : L.y) + o.y;
         if (o.type === 'image') { const bmp = await assetBitmap(o.asset); wt(); if (bmp) g.drawImage(bmp, ox, oy, o.w, o.h); }
         else { g.fillStyle = ON.adaptColor(o.color || '#1B1830', darkSurf); g.font = `${o.fs || 20}px Inter, system-ui, sans-serif`; wrapText(g, o.text, ox + 6, oy + 4, o.w - 12, o.fs || 20); }
       }
-      // fosforlu (multiply / screen), sonra mürekkep
       const list = (data.pages[i] || []).filter(s => s.pts && (!opts.strokeFilter || opts.strokeFilter.has(s)) && Geo.bboxIntersects(s.bbox, R));
       g.globalCompositeOperation = darkSurf ? 'screen' : 'multiply';
       for (const s of list) if (s.tool === 'highlighter') ON.drawStroke(g, s, { dark: darkSurf });
@@ -1993,7 +1997,6 @@
       for (const s of list) if (s.tool !== 'highlighter') ON.drawStroke(g, s, { dark: darkSurf });
       g.restore();
     }
-    // yapışkan kartlar (düzleştirme)
     if (opts.cards) {
       for (const card of nb.cards) {
         const L = inf ? { x: 0, y: 0 } : data.layout[card.page];
@@ -2135,7 +2138,6 @@
     } else {
       const pw = v === 'l' ? ON.A4.h : ON.A4.w, ph = v === 'l' ? ON.A4.w : ON.A4.h;
       if (nb.mode === 'infinite') {
-        // Sınırsız → sayfalı: içeriği sol üste hizala, gerekli kadar sayfa oluştur
         let b = null; for (const s of all) b = Geo.union(b, s.bbox);
         for (const { w } of items) b = Geo.union(b, { minX: w.x, minY: w.y, maxX: w.x, maxY: w.y });
         const dx = b ? 40 - b.minX : 0, dy = b ? 40 - b.minY : 0;
@@ -2150,7 +2152,6 @@
         app.pages = nb.pages.map(() => []);
         for (const s of all) { s.page = pageAt(0, (s.bbox.minY + s.bbox.maxY) / 2); app.pages[s.page].push(s); }
       } else {
-        // Dikey ↔ yatay: yerel koordinatlar korunur
         nb.paper.orient = v;
         withRelayout(() => { nb.pages.forEach(p => { if (p.k === 'paper') { p.w = pw; p.h = ph; } }); });
       }
@@ -2169,7 +2170,6 @@
   app.openSettings = async () => {
     const s = ON.settings;
     const sel = $('modelIn');
-    // Geçersiz eski varsayılan model varsa seçeneklerden kaldır, güncel modelleri ekle
     [...sel.options].forEach(o => { if (/^gemini-3\./.test(o.value)) o.remove(); });
     for (const [val, label] of [['gemini-2.5-flash', 'Gemini 2.5 Flash (Önerilen)'], ['gemini-2.5-flash-lite', 'Gemini 2.5 Flash-Lite (Hızlı / Yüksek Kota)'], ['gemini-2.5-pro', 'Gemini 2.5 Pro (Derin Analiz)']]) {
       if (![...sel.options].some(o => o.value === val)) sel.add(new Option(label, val));
