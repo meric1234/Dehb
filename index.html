@@ -28,6 +28,7 @@
 <link rel="stylesheet" href="focus-studio.css">
 
 <style>
+  #timerBar { display: none !important; }
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -160,7 +161,6 @@
       <button class="ico" id="zenBtn" data-icon="zen" title="Zen / odak modu (Z)"></button>
       <button class="ai-btn" id="aiOpen" title="Gemini çalışma asistanı"><span data-icon="sparkle"></span><span class="lbl-t">Asistan</span></button>
     </header>
-    <div id="timerBar"><i></i></div>
 
     <div id="stage">
       <div id="world"></div>
@@ -647,6 +647,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fire: {
       label: 'Şömine',
       badge: 'Şömine',
+      synth: 'fire',
       candidates: [
         'audio/fire-crackling-with-wind-gusts-gregor-quendel-1-01-03.mp3',
         'fire-crackling-with-wind-gusts-gregor-quendel-1-01-03.mp3'
@@ -655,14 +656,18 @@ document.addEventListener('DOMContentLoaded', () => {
     rain: {
       label: 'Yağmur',
       badge: 'Yağmur',
+      synth: 'rain',
       candidates: [
         'audio/mixkit-long-rain-ambience-1247.wav',
-        'mixkit-long-rain-ambience-1247.wav'
+        'mixkit-long-rain-ambience-1247.wav',
+        'audio/rain.wav',
+        'audio/rain.mp3'
       ]
     },
     piano: {
       label: 'Piyano',
       badge: 'Piyano',
+      synth: 'piano',
       candidates: [
         'audio/pianocafe_kumi-emotional-pianosecret-love-252596.mp3',
         'pianocafe_kumi-emotional-pianosecret-love-252596.mp3'
@@ -671,6 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     symphony: {
       label: 'Senfoni',
       badge: 'Senfoni',
+      synth: 'symphony',
       candidates: [
         'audio/miromaxmusic-classical-symphony-no-copyright-637830.mp3',
         'miromaxmusic-classical-symphony-no-copyright-637830.mp3'
@@ -679,6 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
     lofi: {
       label: 'Lo-Fi',
       badge: 'Lo-Fi',
+      synth: 'lofi',
       candidates: [
         'audio/danyvin-lofi-chill-638526.mp3',
         'danyvin-lofi-chill-638526.mp3'
@@ -687,6 +694,7 @@ document.addEventListener('DOMContentLoaded', () => {
     forest: {
       label: 'Orman',
       badge: 'Orman',
+      synth: 'forest',
       candidates: [
         'audio/forest-ambience-light-birdsong-distant-rooster-vincentmets-1-03-38.mp3',
         'forest-ambience-light-birdsong-distant-rooster-vincentmets-1-03-38.mp3'
@@ -695,27 +703,37 @@ document.addEventListener('DOMContentLoaded', () => {
     city: {
       label: 'Şehir',
       badge: 'Şehir',
+      synth: 'city',
       candidates: [
         'audio/city-ambience-distant-emergency-sirens-off-quiet-street-vincentmets-1-02-17.mp3',
         'city-ambience-distant-emergency-sirens-off-quiet-street-vincentmets-1-02-17.mp3'
       ]
     },
-    gamma40: { label: '40Hz Binaural', badge: '40Hz' },
-    theta: { label: '6Hz Theta', badge: '6Hz' },
-    brown: { label: 'Brown Noise', badge: 'Brown' }
+    gamma40: { label: '40Hz Binaural', badge: '40Hz', synth: 'gamma40' },
+    theta: { label: '6Hz Theta', badge: '6Hz', synth: 'theta' },
+    brown: { label: 'Brown Noise', badge: 'Brown', synth: 'brown' }
   };
 
   const audio = new Audio();
-  audio.preload = 'metadata';
-  let tracks = [], idx = 0, loop = true, seeking = false, fileActive = false, streamActive = false, playToken = 0;
-  let audioCtx = null, synthGain = null, synthNodes = [], activePreset = null;
+  audio.preload = 'auto';
+  let tracks = [], idx = 0, loop = true, seeking = false, fileActive = false, streamActive = false, filePlaying = false, playToken = 0;
+  let audioCtx = null, synthGain = null, synthTimer = null, synthNodes = [], activePreset = null;
 
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
   const volVal = Number.isFinite(savedVol) ? Math.max(0, Math.min(1, savedVol)) : 0.6;
   audio.volume = volVal;
   if (mp3Vol) mp3Vol.value = String(volVal);
 
+  const ensureAudioCtx = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  };
+
   const stopSynth = () => {
+    if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
     synthNodes.forEach(n => {
       try { n.stop?.(); } catch {}
       try { n.disconnect?.(); } catch {}
@@ -726,8 +744,6 @@ document.addEventListener('DOMContentLoaded', () => {
       synthGain = null;
     }
     streamActive = false;
-    activePreset = null;
-    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
   };
 
   const fmtTime = sec => {
@@ -738,21 +754,20 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   const syncSeekUI = () => {
-    const usesAudioElement = !activePreset || !!trackCatalog[activePreset]?.candidates;
-    const dur = usesAudioElement && Number.isFinite(audio.duration) ? audio.duration : 0;
-    if (mp3Rew) mp3Rew.disabled = !usesAudioElement || audio.paused;
-    if (mp3Fwd) mp3Fwd.disabled = !usesAudioElement || audio.paused;
+    const hasFileLoaded = filePlaying && Number.isFinite(audio.duration) && audio.duration > 0;
+    if (mp3Rew) mp3Rew.disabled = !hasFileLoaded || audio.paused;
+    if (mp3Fwd) mp3Fwd.disabled = !hasFileLoaded || audio.paused;
     if (mp3Seek) {
-      mp3Seek.disabled = !usesAudioElement || dur <= 0;
-      if (dur > 0) {
-        mp3Seek.max = String(dur);
-        if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, dur));
+      mp3Seek.disabled = !hasFileLoaded;
+      if (hasFileLoaded) {
+        mp3Seek.max = String(audio.duration);
+        if (!seeking) mp3Seek.value = String(Math.min(audio.currentTime || 0, audio.duration));
       } else if (!seeking) {
         mp3Seek.value = '0';
       }
     }
-    if (mp3CurTime) mp3CurTime.textContent = usesAudioElement ? fmtTime(seeking ? parseFloat(mp3Seek?.value || '0') : audio.currentTime) : (streamActive ? '∞' : '00:00');
-    if (mp3DurTime) mp3DurTime.textContent = usesAudioElement ? fmtTime(dur) : (streamActive ? 'Aktif' : '00:00');
+    if (mp3CurTime) mp3CurTime.textContent = hasFileLoaded ? fmtTime(seeking ? parseFloat(mp3Seek?.value || '0') : audio.currentTime) : (streamActive ? '∞' : '00:00');
+    if (mp3DurTime) mp3DurTime.textContent = hasFileLoaded ? fmtTime(audio.duration) : (streamActive ? 'Canlı' : '00:00');
   };
 
   const seekTo = sec => {
@@ -766,7 +781,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const syncMp3 = () => {
     const cur = tracks[idx];
     const isPlaying = activePreset
-      ? (trackCatalog[activePreset]?.candidates ? !audio.paused : streamActive)
+      ? (streamActive || filePlaying)
       : (!audio.paused && !!cur);
 
     mp3Btn.classList.toggle('playing', isPlaying);
@@ -809,91 +824,89 @@ document.addEventListener('DOMContentLoaded', () => {
     syncSeekUI();
   };
 
-  const tryPlayCandidates = async (candidates, label, token) => {
-    for (const url of candidates) {
-      if (token !== playToken) return false;
-      try {
-        audio.pause();
-        audio.src = url;
-        audio.loop = loop;
-        audio.load();
-        await audio.play();
-        if (token !== playToken) return false;
-        streamActive = true;
-        syncMp3();
-        return true;
-      } catch {}
-    }
-    if (token !== playToken) return false;
-    streamActive = false;
-    activePreset = null;
-    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
-    syncMp3();
-    appNs.app?.toast?.(`${label} dosyası bulunamadı, dosya seçici açılıyor…`);
-    mp3In?.click();
-    return false;
-  };
-
-  const startPreset = type => {
-    playToken++;
-    const token = playToken;
+  const startInstantSynth = synthType => {
     stopSynth();
-    fileActive = false;
-    audio.pause();
-    const meta = trackCatalog[type];
-    if (!meta) return;
+    const ctx = ensureAudioCtx();
+    if (!ctx) return false;
 
-    activePreset = type;
-    presetBox?.querySelector(`[data-snd="${type}"]`)?.classList.add('active-snd');
-
-    if (meta.candidates) {
-      syncMp3();
-      tryPlayCandidates(meta.candidates, meta.label, token);
-      return;
-    }
-
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    if (!audioCtx) audioCtx = new Ctx();
-    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-
-    synthGain = audioCtx.createGain();
+    synthGain = ctx.createGain();
     synthGain.gain.value = (parseFloat(mp3Vol?.value || '0.6') || 0.6) * 0.35;
-    synthGain.connect(audioCtx.destination);
+    synthGain.connect(ctx.destination);
 
-    if (type === 'brown') {
-      const sr = audioCtx.sampleRate;
-      const len = sr * 4;
-      const buf = audioCtx.createBuffer(2, len, sr);
+    const sr = ctx.sampleRate;
+    const len = sr * 3;
+
+    if (synthType === 'brown' || synthType === 'rain' || synthType === 'forest' || synthType === 'city' || synthType === 'fire') {
+      const buf = ctx.createBuffer(2, len, sr);
       for (let ch = 0; ch < 2; ch++) {
         const data = buf.getChannelData(ch);
-        let last = 0;
-        for (let i = 0; i < len; i++) {
-          const w = Math.random() * 2 - 1;
-          data[i] = (last + 0.02 * w) / 1.02;
-          last = data[i];
-          data[i] *= 2.4;
+        if (synthType === 'brown') {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            data[i] = (last + 0.02 * w) / 1.02;
+            last = data[i];
+            data[i] *= 2.4;
+          }
+        } else if (synthType === 'rain') {
+          let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            b0 = 0.99886 * b0 + w * 0.0555179;
+            b1 = 0.99332 * b1 + w * 0.0750759;
+            b2 = 0.96900 * b2 + w * 0.1538520;
+            b3 = 0.86650 * b3 + w * 0.3104856;
+            b4 = 0.55000 * b4 + w * 0.5329522;
+            b5 = -0.7616 * b5 - w * 0.0168980;
+            const drop = Math.random() < 0.0009 ? (Math.random() * 2 - 1) * 0.22 : 0;
+            data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.09 + drop;
+            b6 = w * 0.115926;
+          }
+        } else if (synthType === 'forest') {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            last = (last + 0.04 * w) / 1.04;
+            const breeze = 0.65 + 0.35 * Math.sin((2 * Math.PI * i) / (sr * 3.5));
+            data[i] = last * 1.45 * breeze;
+          }
+        } else if (synthType === 'city') {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            last = (last + 0.07 * w) / 1.07;
+            const hum = 0.75 + 0.25 * Math.sin((2 * Math.PI * i) / (sr * 2.8));
+            data[i] = last * 1.55 * hum;
+          }
+        } else {
+          let last = 0;
+          for (let i = 0; i < len; i++) {
+            const w = Math.random() * 2 - 1;
+            last = (last + 0.03 * w) / 1.03;
+            const crackle = Math.random() < 0.0004 ? (Math.random() * 2 - 1) * 0.3 : 0;
+            data[i] = last * 1.5 + crackle;
+          }
         }
       }
-      const src = audioCtx.createBufferSource();
+      const src = ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
       src.connect(synthGain);
       src.start();
       synthNodes.push(src);
-    } else if (type === 'gamma40' || type === 'theta') {
-      const baseFreq = type === 'gamma40' ? 200 : 174;
-      const beatHz = type === 'gamma40' ? 40 : 6;
-      const merger = audioCtx.createChannelMerger(2);
-      const oscL = audioCtx.createOscillator();
-      const oscR = audioCtx.createOscillator();
+    } else if (synthType === 'gamma40' || synthType === 'theta') {
+      const baseFreq = synthType === 'gamma40' ? 200 : 174;
+      const beatHz = synthType === 'gamma40' ? 40 : 6;
+      const merger = ctx.createChannelMerger(2);
+      const oscL = ctx.createOscillator();
+      const oscR = ctx.createOscillator();
       oscL.type = 'sine';
       oscR.type = 'sine';
       oscL.frequency.value = baseFreq;
       oscR.frequency.value = baseFreq + beatHz;
 
-      const gL = audioCtx.createGain();
-      const gR = audioCtx.createGain();
+      const gL = ctx.createGain();
+      const gR = ctx.createGain();
       gL.gain.value = 0.45;
       gR.gain.value = 0.45;
 
@@ -906,10 +919,88 @@ document.addEventListener('DOMContentLoaded', () => {
       oscL.start();
       oscR.start();
       synthNodes.push(oscL, oscR, gL, gR, merger);
+    } else {
+      const notes = synthType === 'piano'
+        ? [261.63, 329.63, 392.00, 493.88, 523.25]
+        : synthType === 'symphony'
+        ? [196.00, 293.66, 392.00, 493.88, 587.33]
+        : [220.00, 261.63, 329.63, 392.00, 440.00];
+      let step = 0;
+      const playTone = () => {
+        if (!synthGain || !ctx || ctx.state === 'closed') return;
+        const freq = notes[step % notes.length];
+        step++;
+        const now = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        const env = ctx.createGain();
+        osc.type = synthType === 'symphony' ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        env.gain.setValueAtTime(0.0001, now);
+        env.gain.linearRampToValueAtTime(0.14, now + 0.06);
+        env.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+        osc.connect(env);
+        env.connect(synthGain);
+        osc.start(now);
+        osc.stop(now + 1.85);
+      };
+      playTone();
+      synthTimer = setInterval(playTone, 1700);
     }
 
     streamActive = true;
     syncMp3();
+    return true;
+  };
+
+  const upgradeWithFileIfAvailable = async (meta, token) => {
+    if (!meta.candidates) return;
+    for (const url of meta.candidates) {
+      if (token !== playToken) return;
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || blob.size < 64 || token !== playToken) continue;
+        const blobUrl = URL.createObjectURL(blob);
+        audio.pause();
+        audio.src = blobUrl;
+        audio.loop = loop;
+        await audio.play();
+        if (token !== playToken) {
+          audio.pause();
+          return;
+        }
+        filePlaying = true;
+        stopSynth();
+        syncMp3();
+        return;
+      } catch {}
+    }
+  };
+
+  const startPreset = type => {
+    playToken++;
+    const token = playToken;
+    fileActive = false;
+    filePlaying = false;
+    audio.pause();
+
+    const meta = trackCatalog[type];
+    if (!meta) return;
+
+    activePreset = type;
+    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
+    presetBox?.querySelector(`[data-snd="${type}"]`)?.classList.add('active-snd');
+
+    if (meta.synth) {
+      startInstantSynth(meta.synth);
+    } else {
+      syncMp3();
+    }
+
+    if (meta.candidates) {
+      upgradeWithFileIfAvailable(meta, token);
+    }
   };
 
   const playTrack = (i, auto = true) => {
@@ -917,6 +1008,9 @@ document.addEventListener('DOMContentLoaded', () => {
     playToken++;
     stopSynth();
     fileActive = true;
+    filePlaying = true;
+    activePreset = null;
+    presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
     idx = (i + tracks.length) % tracks.length;
     audio.src = tracks[idx].url;
     audio.loop = loop && tracks.length === 1;
@@ -936,7 +1030,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (activePreset === snd) {
         playToken++;
         stopSynth();
+        filePlaying = false;
         audio.pause();
+        activePreset = null;
+        btn.classList.remove('active-snd');
         syncMp3();
       } else {
         startPreset(snd);
@@ -948,6 +1045,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
+    ensureAudioCtx();
     const open = mp3Pop.hidden;
     document.querySelectorAll('.pop').forEach(p => { if (p !== mp3Pop) p.hidden = true; });
     mp3Pop.hidden = !open;
@@ -971,17 +1069,23 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   mp3Play?.addEventListener('click', () => {
     if (activePreset) {
-      if (trackCatalog[activePreset]?.candidates) {
-        audio.paused ? audio.play().catch(() => {}) : audio.pause();
-      } else {
+      const isCurrentlyOn = streamActive || (filePlaying && !audio.paused);
+      if (isCurrentlyOn) {
         playToken++;
         stopSynth();
+        filePlaying = false;
+        audio.pause();
+        activePreset = null;
+        presetBox?.querySelectorAll('[data-snd]').forEach(b => b.classList.remove('active-snd'));
+      } else {
+        startPreset(activePreset);
       }
       syncMp3();
       return;
     }
     if (!tracks.length) return;
     fileActive = true;
+    filePlaying = true;
     audio.paused ? audio.play().catch(() => {}) : audio.pause();
     syncMp3();
   });
@@ -1022,7 +1126,7 @@ document.addEventListener('DOMContentLoaded', () => {
   audio.addEventListener('pause', syncMp3);
   audio.addEventListener('ended', () => {
     if (fileActive && tracks.length > 1 && (loop || idx + 1 < tracks.length)) playTrack(idx + 1, true);
-    else syncMp3();
+    else { filePlaying = false; syncMp3(); }
   });
   document.addEventListener('pointerdown', e => {
     if (!mp3Pop.hidden && !mp3Pop.contains(e.target) && !mp3Btn.contains(e.target)) mp3Pop.hidden = true;
