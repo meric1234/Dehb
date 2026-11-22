@@ -41,6 +41,9 @@
   #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
   #spenTestBadge { display: inline-block; margin-top: 6px; padding: 4px 8px; border-radius: 6px; font-size: 11px; background: rgba(255,255,255,.06); color: #94a3b8; }
   #spenTestBadge.ok { background: rgba(34,197,94,.18); color: #4ade80; }
+  .key-row { display: flex; gap: 6px; align-items: stretch; }
+  .key-row input { flex: 1; min-width: 0; margin: 0 !important; user-select: text; -webkit-user-select: text; }
+  .key-row .btn { white-space: nowrap; padding: 0 10px; }
 </style>
 
 <!-- Uygulama modülleri (sıra önemli) -->
@@ -256,7 +259,12 @@
     <h2 id="setT">Ayarlar</h2>
     <div class="lbl">Gemini</div>
     <p class="hint small">API anahtarın yalnızca bu cihazda saklanır ve doğrudan Google'a gönderilir. Ücretsiz anahtar: aistudio.google.com/apikey</p>
-    <input id="keyIn" type="password" placeholder="Gemini API anahtarı" autocomplete="off">
+    <div class="key-row">
+      <input id="keyIn" type="password" placeholder="Gemini API anahtarı" autocomplete="off">
+      <button type="button" class="btn" id="keyEyeBtn" title="Göster / Gizle">Göster</button>
+      <button type="button" class="btn" id="keyPasteBtn" title="Panodan yapıştır">Yapıştır</button>
+      <button type="button" class="btn" id="keyCopyBtn" title="Panoya kopyala">Kopyala</button>
+    </div>
     <select id="modelIn">
       <option value="gemini-3.8-flash">gemini-3.8-flash (önerilen)</option>
       <option value="gemini-2.5-flash">gemini-2.5-flash</option>
@@ -328,6 +336,55 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  /* 0. API Anahtarı Yapıştır / Kopyala / Göster Butonları */
+  const keyIn = document.getElementById('keyIn');
+  const keyEyeBtn = document.getElementById('keyEyeBtn');
+  const keyPasteBtn = document.getElementById('keyPasteBtn');
+  const keyCopyBtn = document.getElementById('keyCopyBtn');
+
+  keyEyeBtn?.addEventListener('click', () => {
+    const isPwd = keyIn.type === 'password';
+    keyIn.type = isPwd ? 'text' : 'password';
+    keyEyeBtn.textContent = isPwd ? 'Gizle' : 'Göster';
+  });
+
+  keyPasteBtn?.addEventListener('click', async () => {
+    try {
+      const txt = (await navigator.clipboard.readText()).trim();
+      if (txt) {
+        keyIn.value = txt;
+        keyIn.dispatchEvent(new Event('input', { bubbles: true }));
+        window.ON?.app?.toast?.('API anahtarı yapıştırıldı');
+      } else {
+        window.ON?.app?.toast?.('Panoda metin bulunamadı');
+      }
+    } catch {
+      keyIn.focus();
+      keyIn.select();
+      window.ON?.app?.toast?.('Kutuya dokunup Yapıştır seçin');
+    }
+  });
+
+  keyCopyBtn?.addEventListener('click', async () => {
+    const val = keyIn.value.trim();
+    if (!val) {
+      window.ON?.app?.toast?.('Kopyalanacak anahtar yok');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(val);
+      window.ON?.app?.toast?.('API anahtarı kopyalandı');
+    } catch {
+      const prevType = keyIn.type;
+      keyIn.type = 'text';
+      keyIn.focus();
+      keyIn.select();
+      document.execCommand('copy');
+      keyIn.type = prevType;
+      window.ON?.app?.toast?.('API anahtarı kopyalandı');
+    }
+  });
+
   /* 1. Alttaki kronometre çubuğunu gizle (üstteki sayaç korunur) */
   const hideBottomTimerBar = () => {
     document.querySelectorAll('#stage > div, #main > div, body > div').forEach(el => {
@@ -426,7 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!mp3Pop.hidden && !mp3Pop.contains(e.target) && !mp3Btn.contains(e.target)) mp3Pop.hidden = true;
   });
 
-  /* 3. S Pen yan tuş görev yönetimi (Samsung / Android Chrome tam uyumlu) */
+  /* 3. S Pen yan tuş görev yönetimi */
   const ON = window.ON || (window.ON = {});
   const spenSel = document.getElementById('spenAction');
   const spenBadge = document.getElementById('spenTestBadge');
@@ -453,7 +510,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = document.querySelector(`#toolBtns [data-tool="${t}"]`);
     if (!btn) return;
     btn.click();
-    // Araç değiştirirken ayar açılır penceresinin (toolPop) açılmasını önle
     const pop = document.getElementById('toolPop');
     if (pop) pop.hidden = true;
   };
@@ -493,7 +549,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (prevTool) { switchTool(prevTool); prevTool = null; }
   };
 
-  // Samsung S Pen hem buttons=32 (eraser/barrel) hem buttons=2 (sağ tık) gönderebilir
   const isSpenSidePressed = e => {
     if (e.pointerType !== 'pen') return false;
     return (e.buttons & 32) !== 0 || (e.buttons & 2) !== 0 || e.button === 5 || e.button === 2;
@@ -530,8 +585,8 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('pointerup', onPenUp, { capture: true });
   window.addEventListener('pointercancel', onPenUp, { capture: true });
 
-  // Android S Pen yan tuşuna basınca sistemin gönderdiği contextmenu / auxclick olayını yakala
   window.addEventListener('contextmenu', e => {
+    if (e.target && e.target.closest('input, textarea')) return;
     if (getSpenAct() === 'none') return;
     e.preventDefault();
     if (!barrelDown) {
