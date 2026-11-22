@@ -1,6 +1,6 @@
 /* =====================================================================
-   Odak Not — ai-study.js
-   Gemini istemcisi (yeniden deneme + yedek model), Asistan paneli,
+   Odak Not — ai-study.js (Obsidian Studio & Smart Fallback Edition)
+   Gemini istemcisi (yeniden deneme + çoklu yedek model), Asistan paneli,
    Markdown + KaTeX, StickyCardManager (yapışkan kartlar),
    StudyGuideBuilder (çalışma özeti + sınav soruları).
    API anahtarı koda gömülmez; kullanıcı arayüzden girer (localStorage).
@@ -18,8 +18,12 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
   };
   ON.LS = LS;
-  ON.settings = Object.assign({ key: '', model: 'gemini-3.8-flash', custom: '', fingerDraw: false, minimap: true }, LS.get('on-settings', {}));
-  if (/^gemini-(1|2)\./.test(ON.settings.model)) ON.settings.model = 'gemini-3.8-flash';
+  ON.settings = Object.assign({ key: '', model: 'gemini-2.5-flash', custom: '', fingerDraw: false, minimap: true }, LS.get('on-settings', {}));
+  // Geçersiz eski varsayılan model (3.8 / 3.5 vb.) kayıtlı kaldıysa çalışan modele çek
+  if (!ON.settings.model || /^gemini-3\./.test(ON.settings.model)) {
+    ON.settings.model = 'gemini-2.5-flash';
+    LS.set('on-settings', ON.settings);
+  }
   ON.saveSettings = () => LS.set('on-settings', ON.settings);
 
   /* ================= Markdown + KaTeX ================= */
@@ -52,12 +56,13 @@ Kurallar: Türkçe yaz. Kısa paragraflar, numaralı adımlar; her adımda tek f
 satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığın el yazısı kısımları [?] ile işaretle.`;
   const API = 'https://generativelanguage.googleapis.com/v1beta/';
   const RETRY = new Set([500, 502, 503, 504]);
+  const STATIC_FALLBACKS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-flash-latest'];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const detail = (status, msg) => msg ? `\n\nAyrıntı (${status}): ${msg.slice(0, 200)}` : ` (kod ${status})`;
   function friendly(status, msg) {
     if (status === 400 && /API key|API_KEY/i.test(msg)) return 'API anahtarı geçersiz görünüyor. AI Studio\'dan kopyalarken eksik kalmış olabilir.';
     if (status === 403) return 'Anahtarın bu API\'ye izni yok. AI Studio\'da yeni bir anahtar oluşturmayı dene.';
-    if (status === 429) return 'Ücretsiz kota doldu ya da çok hızlı istek gitti. Bir dakika bekleyip tekrar dene.' + detail(status, msg);
+    if (status === 429) return 'Ücretsiz kota doldu ya da çok hızlı istek gitti. Yedek modeller de denendi; 1 dakika bekleyip tekrar dene.' + detail(status, msg);
     if (status === 503 || /overloaded|UNAVAILABLE|high demand/i.test(msg)) return 'Gemini şu an çok yoğun; denemeler ve yedek model de yanıt vermedi. 1-2 dakika sonra tekrar dene.' + detail(status, msg);
     if (status >= 500) return 'Google tarafında geçici bir hata oluştu; otomatik denemeler de başarısız oldu.' + detail(status, msg);
     return `Hata (${status}): ${msg}`;
@@ -72,16 +77,20 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
   let modelCache = null;
   async function listModels(key) {
     if (modelCache) return modelCache;
-    const r = await fetch(API + 'models?pageSize=200', { headers: { 'x-goog-api-key': key } });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(friendly(r.status, j.error?.message || ''));
-    const names = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-      .map(m => m.name.replace('models/', ''))
-      .filter(n => /^gemini-/.test(n) && !/(tts|image|live|audio|embedding|robotics|computer|transcribe|translate)/.test(n));
-    const score = n => (/flash/.test(n) ? 1000 : 0) - (/lite/.test(n) ? 100 : 0) - (/preview|exp/.test(n) ? 50 : 0) + (parseFloat(n.slice(7)) || 0);
-    names.sort((a, b) => score(b) - score(a));
-    if (!names.length) throw new Error('Bu anahtarla kullanılabilen bir Gemini modeli bulunamadı.');
-    return (modelCache = names);
+    try {
+      const r = await fetch(API + 'models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return STATIC_FALLBACKS;
+      const names = (j.models || []).filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => m.name.replace('models/', ''))
+        .filter(n => /^gemini-/.test(n) && !/(tts|image|live|audio|embedding|robotics|computer|transcribe|translate)/.test(n));
+      const score = n => (/flash/.test(n) ? 1000 : 0) + (/lite/.test(n) ? 150 : 0) - (/preview|exp/.test(n) ? 50 : 0) + (parseFloat(n.slice(7)) || 0);
+      names.sort((a, b) => score(b) - score(a));
+      const merged = [...new Set([...STATIC_FALLBACKS, ...names])];
+      return (modelCache = merged);
+    } catch {
+      return STATIC_FALLBACKS;
+    }
   }
   ON.gemini = async (s, parts, onStatus = () => {}) => {
     let viaQuery = false;
@@ -103,20 +112,21 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
     let model = first, r = null, j = {}, swaps = 0, gone = false;
     while (true) {
       tried.add(model);
-      for (let a = 0; a < 3; a++) {
-        if (a) { onStatus(`Gemini yoğun, tekrar deneniyor (${a + 1}/3)…`); await sleep(1500 * 2 ** (a - 1) + Math.random() * 400); }
+      const maxAttempts = swaps === 0 ? 2 : 1;
+      for (let a = 0; a < maxAttempts; a++) {
+        if (a) { onStatus(`Gemini yoğun, tekrar deneniyor (${a + 1}/${maxAttempts})…`); await sleep(1200 + Math.random() * 400); }
         r = await send(model);
         if (r.ok || !RETRY.has(r.status)) break;
       }
       if (r.ok) break;
       j = await r.json().catch(() => ({}));
-      const canSwap = r.status === 404 || RETRY.has(r.status) || (r.status === 429 && swaps === 0);
-      if (!canSwap || swaps >= 2) break;
+      const canSwap = r.status === 404 || r.status === 429 || RETRY.has(r.status);
+      if (!canSwap || swaps >= 3) break;
       if (r.status === 404) gone = true;
-      let next;
-      try { next = (await listModels(s.key)).find(n => !tried.has(n)); } catch { break; }
+      const candidates = await listModels(s.key);
+      const next = candidates.find(n => !tried.has(n));
       if (!next) break;
-      onStatus(`${model} yanıt vermedi, ${next} deneniyor…`);
+      onStatus(`${model} kotaya takıldı/yanıt vermedi, ${next} deneniyor…`);
       model = next; swaps++;
     }
     if (!r.ok) { if (!j.error) j = await r.json().catch(() => ({})); throw new Error(friendly(r.status, j.error?.message || '')); }
@@ -331,7 +341,7 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
     }
   }
   ON.StickyCardManager = StickyCardManager;
-  ON.CARD_COLORS = { krem: ['#FFF6DA', '#2A2418'], nane: ['#DDF5EA', '#13342A'], gokyuzu: ['#DCEBFF', '#142844'], koyu: ['#1B1630', '#F2EFFB'] };
+  ON.CARD_COLORS = { krem: ['#FFF8E7', '#1E293B'], nane: ['#E2F7EE', '#0F2E24'], gokyuzu: ['#E0EFFF', '#102542'], koyu: ['#131926', '#F1F5F9'] };
 
   /* ================= StudyGuideBuilder ================= */
   const HL_NAMES = { '#FFE45C': 'Sarı', '#8EF0A6': 'Yeşil', '#FF9ECF': 'Pembe', '#8FD3FF': 'Mavi', '#C7B3FF': 'Mor' };
@@ -411,7 +421,7 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
       list.forEach((it, idx) => {
         if (it.page !== page) { page = it.page; h += `<div class="sg-page">Sayfa ${page + 1}</div>`; }
         if (it.type === 'hl') h += `<button class="sg-item" data-i="${idx}"><i class="bar" style="background:${it.color}"></i><span>${it.text ? esc(it.text) : '<em>El yazısı vurgu</em>'}</span></button>`;
-        else h += `<button class="sg-item card" data-i="${idx}"><i class="bar" style="background:${(ON.CARD_COLORS[it.color] || ['#FFF6DA'])[0]}"></i><span><b>${esc(it.title)}</b><small>${esc(it.text.replace(/[#*$`]/g, '').slice(0, 140))}</small></span></button>`;
+        else h += `<button class="sg-item card" data-i="${idx}"><i class="bar" style="background:${(ON.CARD_COLORS[it.color] || ['#FFF8E7'])[0]}"></i><span><b>${esc(it.title)}</b><small>${esc(it.text.replace(/[#*$`]/g, '').slice(0, 140))}</small></span></button>`;
       });
       $('sgList').innerHTML = h;
       $('sgList').onclick = e => {
