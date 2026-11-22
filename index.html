@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#03010D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="DEHB dostu, kalem odaklı mühendislik not defteri — PDF, el yazısı ve Gemini asistanı.">
+<title>Odak Not</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/favicon.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<!-- Yazı tipi -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- KaTeX (formüller) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+
+<!-- pdf.js (PDF okuma), jsPDF (PDF dışa aktarma), html2canvas (kartları düzleştirme) -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<link rel="stylesheet" href="style.css">
+
+<!-- Uygulama modülleri (sıra önemli) -->
+<script defer src="storage.js"></script>
+<script defer src="canvas-tools.js"></script>
+<script defer src="pdf-engine.js"></script>
+<script defer src="ai-study.js"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ SOL PANEL ============ -->
+  <aside id="side" aria-label="Kütüphane ve defter gezinme">
+    <div class="side-h">
+      <b class="brand">Odak Not</b>
+      <button class="ico" id="hideSide" data-icon="chevL" title="Paneli kapat"></button>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button role="tab" data-tab="lib" class="on" title="Dersler ve defterler"><span data-icon="folder"></span>Kütüphane</button>
+      <button role="tab" data-tab="pages" title="Sayfa önizlemeleri"><span data-icon="pages"></span>Sayfalar</button>
+      <button role="tab" data-tab="toc" title="PDF içindekiler"><span data-icon="toc"></span>İçindekiler</button>
+      <button role="tab" data-tab="find" title="Defterde ara"><span data-icon="search"></span>Ara</button>
+    </nav>
+
+    <section class="pane on" id="paneLib">
+      <div class="lbl">Dersler <button class="ico sm" id="addFolderBtn" data-icon="plus" title="Ders ekle"></button></div>
+      <form class="addrow" id="folderRow"><input id="folderIn" placeholder="Ders adı (ör. Sinyaller ve Sistemler)" autocomplete="off"><button class="btn pri">Ekle</button></form>
+      <div id="folders"></div>
+      <div class="lbl">Defterler</div>
+      <div id="notebooks"></div>
+    </section>
+
+    <section class="pane" id="panePages">
+      <div class="pane-acts">
+        <button class="btn" id="addPageBtn"><span data-icon="plus"></span>Boş sayfa ekle</button>
+        <button class="btn ghost" id="delPageBtn" title="Bu sayfayı sil"><span data-icon="trash"></span></button>
+      </div>
+      <div id="thumbs" class="thumbs"></div>
+    </section>
+
+    <section class="pane" id="paneToc"><div id="toc"></div></section>
+
+    <section class="pane" id="paneFind">
+      <form id="findForm" class="find"><input id="findIn" type="search" placeholder="Defterde ara…" autocomplete="off"></form>
+      <p class="hint small" id="findProg"></p>
+      <div id="findRes"></div>
+    </section>
+
+    <div class="side-f">
+      <button class="btn pri wide" id="newNbBtn"><span data-icon="plus"></span>Yeni defter</button>
+      <button class="ico" id="openSettings" data-icon="settings" title="Ayarlar"></button>
+    </div>
+  </aside>
+
+  <!-- ============ ANA ALAN ============ -->
+  <main id="main">
+    <header id="top">
+      <button class="ico" id="toggleSide" data-icon="menu" title="Paneli aç/kapat"></button>
+      <input id="title" aria-label="Defter başlığı" value="Odak Not" autocomplete="off">
+      <span id="saved" aria-live="polite">Kaydedildi</span>
+      <button class="ico timer" id="timerBtn" title="Odak sayacı (sessiz)"><span data-icon="timer"></span><b id="timerTxt"></b></button>
+      <button class="ico" id="studyBtn" data-icon="study" title="Çalışma özeti"></button>
+      <button class="ico" id="paperBtn" data-icon="paper" title="Kâğıt ve sayfa düzeni"></button>
+      <button class="ico" id="exportBtn" data-icon="export" title="PDF olarak dışa aktar"></button>
+      <button class="ico" id="zenBtn" data-icon="zen" title="Zen / odak modu (Z)"></button>
+      <button class="ai-btn" id="aiOpen" title="Gemini çalışma asistanı"><span data-icon="sparkle"></span><span class="lbl-t">Asistan</span></button>
+    </header>
+    <div id="timerBar"><i></i></div>
+
+    <div id="stage">
+      <div id="world"></div>
+      <canvas id="hlCanvas" class="layer"></canvas>
+      <canvas id="inkCanvas" class="layer"></canvas>
+      <canvas id="liveCanvas" class="layer"></canvas>
+      <div id="worldTop"></div>
+
+      <div id="empty" hidden>
+        <p><b>Kütüphanen boş.</b><br>Yeni bir defter aç ya da bir ders PDF'i içe aktar.</p>
+        <div class="row center"><button class="btn pri" id="emptyNew">Yeni defter</button><button class="btn" id="emptyPdf">PDF aç</button></div>
+      </div>
+
+      <!-- Kement seçimi mini çubuğu -->
+      <div id="gizmoBar" class="floatbar" data-ui hidden>
+        <button id="gzColor" title="Seçili çizgileri mevcut renge boya"><i class="dot" id="gzDot"></i>Renk</button>
+        <button id="gzDup" data-icon="copy" title="Çoğalt"></button>
+        <button id="gzDel" data-icon="trash" title="Sil"></button>
+        <button id="gzAi" class="acc"><span data-icon="sparkle"></span>Gemini'ye gönder</button>
+      </div>
+
+      <!-- PDF metin seçimi menüsü -->
+      <div id="selMenu" class="floatbar" data-ui hidden>
+        <button data-sel="translate">Türkçeye çevir</button>
+        <button data-sel="summarize">Özetle</button>
+        <button data-sel="explain">Açıkla</button>
+        <button data-sel="copy" data-icon="copy" title="Kopyala"></button>
+        <span class="sep"></span>
+        <span id="selColors"></span>
+      </div>
+
+      <canvas id="minimap" data-ui title="Mini harita — dokun ve sürükle"></canvas>
+      <button id="backBtn" class="pill" data-ui hidden><span data-icon="target"></span>Son yazılan yere dön</button>
+      <button id="zenExit" class="pill faint" data-ui hidden>Zen'den çık</button>
+
+      <!-- Yüzen araç çubuğu -->
+      <div id="tools" data-ui role="toolbar" aria-label="Kalem araçları">
+        <button class="grip" id="toolGrip" title="Sürükle — araç çubuğunu taşı" aria-label="Araç çubuğunu taşı"></button>
+        <div class="tgroup" id="toolBtns">
+          <button class="ico" data-tool="pen" title="Kalem (P) — tekrar dokun: kalem türü ve kalınlık"></button>
+          <button class="ico" data-tool="highlighter" data-icon="highlighter" title="Fosforlu kalem (H)"></button>
+          <button class="ico" data-tool="eraser" data-icon="eraser" title="Silgi (E) — tekrar dokun: silgi modu"></button>
+          <button class="ico" data-tool="lasso" data-icon="lasso" title="Kement (L)"></button>
+          <button class="ico" data-tool="laser" data-icon="laser" title="Lazer işaretçi"></button>
+          <button class="ico" data-tool="textsel" data-icon="textsel" title="PDF metni seç (S)"></button>
+          <button class="ico" data-tool="insert" data-icon="insert" title="Ekle: metin kutusu, görsel"></button>
+        </div>
+        <span class="sep collapsible"></span>
+        <div class="tgroup collapsible" id="swatches"></div>
+        <label class="ico collapsible colorpick" title="Tüm renkler"><input type="color" id="colorPick" aria-label="Renk seçici"><span data-icon="palette"></span></label>
+        <span class="sep collapsible"></span>
+        <div class="tgroup collapsible" id="sizes"></div>
+        <span class="sep collapsible"></span>
+        <button class="ico collapsible" id="undo" data-icon="undo" title="Geri al (Ctrl+Z, iki parmakla dokun)"></button>
+        <button class="ico collapsible" id="redo" data-icon="redo" title="Yinele (Ctrl+Y, üç parmakla dokun)"></button>
+        <button class="ico" id="collapseTools" data-icon="chevL" title="Araç çubuğunu katla"></button>
+      </div>
+      <div id="toolPop" class="pop" data-ui hidden></div>
+
+      <!-- ============ ASİSTAN (sağ panel) ============ -->
+      <section id="ai" data-ui aria-label="Gemini çalışma asistanı">
+        <div class="ai-h"><b>Asistan</b><button class="ico" id="aiClose" data-icon="close" title="Kapat"></button></div>
+        <div id="aiCtx" class="ai-ctx" hidden>
+          <img id="aiCtxImg" alt="Gönderilecek bölge" hidden>
+          <span id="aiCtxLbl"></span>
+          <button class="ico sm" id="aiCtxClear" data-icon="close" title="Bağlamı temizle (sayfaya dön)"></button>
+        </div>
+        <div class="ai-acts" id="acts"></div>
+        <form id="ask"><input id="askIn" placeholder="Bu sayfa hakkında soru sor…" autocomplete="off"><button class="btn pri">Sor</button></form>
+        <div id="out"><p class="hint">Sayfayı ya da kementle seçtiğin bölgeyi Gemini'ye gönderir. Yanıtı bir kart olarak tuvale sabitleyebilirsin.</p></div>
+        <div id="outActs" class="row" hidden>
+          <button class="btn pri" id="pinOut"><span data-icon="pin"></span>Tuvale sabitle</button>
+          <button class="btn" id="copyOut"><span data-icon="copy"></span>Kopyala</button>
+        </div>
+      </section>
+
+      <div id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </main>
+</div>
+
+<!-- ============ AÇILIR PENCERELER ============ -->
+<div class="modal" id="newNbDlg" role="dialog" aria-modal="true" aria-labelledby="newNbT">
+  <form class="card" id="newNbForm">
+    <h2 id="newNbT">Yeni defter</h2>
+    <input id="nbTitle" placeholder="Defter adı (ör. Hafta 5 — Laplace)" autocomplete="off">
+    <div class="seg" id="nbMode">
+      <button type="button" data-v="p" class="on">A4 dikey</button><button type="button" data-v="l">A4 yatay</button><button type="button" data-v="inf">Sınırsız tuval</button>
+    </div>
+    <div class="lbl">Şablon</div><div class="chips" id="nbTpl"></div>
+    <div class="lbl">Kâğıt rengi</div><div class="chips" id="nbTheme"></div>
+    <div class="row"><button type="button" class="btn" id="nbFromPdf"><span data-icon="export" class="flip"></span>PDF'den oluştur</button><span class="grow"></span><button type="button" class="btn" data-close>Vazgeç</button><button class="btn pri">Oluştur</button></div>
+    <p class="hint small" id="nbMsg"></p>
+  </form>
+</div>
+
+<div class="modal" id="paperDlg" role="dialog" aria-modal="true" aria-labelledby="paperT">
+  <div class="card">
+    <h2 id="paperT">Kâğıt ve düzen</h2>
+    <div id="paperLayoutBox"><div class="lbl">Düzen</div>
+      <div class="seg" id="pdLayout"><button data-v="p">A4 dikey</button><button data-v="l">A4 yatay</button><button data-v="inf">Sınırsız tuval</button></div></div>
+    <div class="lbl">Şablon <small class="hint" id="pdTplNote"></small></div><div class="chips" id="pdTpl"></div>
+    <div class="lbl">Kâğıt rengi</div><div class="chips" id="pdTheme"></div>
+    <label class="chk" id="pdDarkRow"><input type="checkbox" id="pdDark"> PDF'yi koyu göster (göz yormaz)</label>
+    <div class="row"><span class="grow"></span><button class="btn pri" data-close>Tamam</button></div>
+  </div>
+</div>
+
+<div class="modal" id="exportDlg" role="dialog" aria-modal="true" aria-labelledby="expT">
+  <div class="card">
+    <h2 id="expT">PDF olarak dışa aktar</h2>
+    <div class="seg" id="expScope"><button data-v="page">Bu sayfa</button><button data-v="nb" class="on">Tüm defter</button><button data-v="folder">Tüm ders</button></div>
+    <label class="chk"><input type="checkbox" id="expPrint" checked> Yazdırma dostu (koyu kâğıt beyaza, mürekkep koyuya)</label>
+    <label class="chk"><input type="checkbox" id="expCards" checked> Yapışkan kartları dahil et</label>
+    <div class="seg" id="expQ"><button data-v="2" class="on">Standart</button><button data-v="3">Yüksek çözünürlük</button></div>
+    <div class="progress" id="expProg" hidden><i></i></div>
+    <p class="hint small" id="expMsg"></p>
+    <div class="row"><span class="grow"></span><button class="btn" id="expCancel">Kapat</button><button class="btn pri" id="expGo">Dışa aktar</button></div>
+  </div>
+</div>
+
+<div class="modal" id="studyDlg" role="dialog" aria-modal="true" aria-labelledby="sgT">
+  <div class="card wide">
+    <div class="row"><h2 id="sgT">Çalışma özeti</h2><span class="grow"></span><small class="hint" id="sgCount"></small><button class="ico" data-close data-icon="close" title="Kapat"></button></div>
+    <div class="chips" id="sgFilters"></div>
+    <div class="sg-list" id="sgList"></div>
+    <div class="row wrap">
+      <button class="btn" id="sgCopy"><span data-icon="copy"></span>Markdown kopyala</button>
+      <button class="btn" id="sgAdd"><span data-icon="plus"></span>Deftere özet sayfası ekle</button>
+      <button class="btn pri" id="sgQuizBtn"><span data-icon="sparkle"></span>Sınav soruları üret</button>
+    </div>
+    <div id="sgQuiz" hidden><div class="sg-quiz" id="sgQuizOut"></div>
+      <div class="row"><button class="btn" id="sgQuizPin"><span data-icon="pin"></span>Tuvale sabitle</button><button class="btn" id="sgQuizCopy"><span data-icon="copy"></span>Kopyala</button></div></div>
+  </div>
+</div>
+
+<div class="modal" id="settingsDlg" role="dialog" aria-modal="true" aria-labelledby="setT">
+  <form class="card" id="setForm">
+    <h2 id="setT">Ayarlar</h2>
+    <div class="lbl">Gemini</div>
+    <p class="hint small">API anahtarın yalnızca bu cihazda saklanır ve doğrudan Google'a gönderilir. Ücretsiz anahtar: aistudio.google.com/apikey</p>
+    <input id="keyIn" type="password" placeholder="Gemini API anahtarı" autocomplete="off">
+    <select id="modelIn">
+      <option value="gemini-3.8-flash">gemini-3.8-flash (önerilen)</option>
+      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (hızlı, ucuz)</option>
+      <option value="gemini-flash-latest">gemini-flash-latest (her zaman en yeni)</option>
+    </select>
+    <input id="modelCustom" placeholder="veya özel model adı (isteğe bağlı)" autocomplete="off">
+    <p id="testMsg" class="hint small pre"></p>
+    <div class="lbl">Kalem ve ekran</div>
+    <label class="chk"><input type="checkbox" id="fingerDraw"> Parmakla çizime izin ver (kalemsiz cihazlar; iki parmak kaydırır)</label>
+    <label class="chk"><input type="checkbox" id="showMini"> Mini haritayı göster</label>
+    <div class="lbl">Depolama</div>
+    <div class="progress" id="quotaBar"><i></i></div>
+    <p class="hint small" id="quotaTxt"></p>
+    <div class="row wrap">
+      <button type="button" class="btn" id="backupBtn"><span data-icon="export"></span>Yedek al (.odaknot)</button>
+      <button type="button" class="btn" id="restoreBtn"><span data-icon="export" class="flip"></span>Yedekten yükle</button>
+      <button type="button" class="btn ghost" id="cleanBtn">Kullanılmayan PDF'leri temizle</button>
+    </div>
+    <p class="hint small pre" id="backupMsg"></p>
+    <div class="row"><button type="button" class="btn" id="testBtn">Bağlantıyı test et</button><span class="grow"></span><button type="button" class="btn" data-close>Vazgeç</button><button class="btn pri">Kaydet</button></div>
+  </form>
+</div>
+
+<div class="modal" id="confirmDlg" role="alertdialog" aria-modal="true" aria-labelledby="cfT">
+  <div class="card narrow">
+    <h2 id="cfT"></h2>
+    <p class="hint" id="cfMsg"></p>
+    <div class="row"><span class="grow"></span><button class="btn" id="cfNo">Vazgeç</button><button class="btn danger" id="cfYes">Tamam</button></div>
+  </div>
+</div>
+
+<div class="pop" id="timerPop" data-ui hidden>
+  <div class="lbl">Sessiz odak sayacı</div>
+  <div class="row"><button class="btn" data-min="15">15 dk</button><button class="btn" data-min="25">25 dk</button><button class="btn" data-min="45">45 dk</button></div>
+  <button class="btn ghost wide" id="timerStop" hidden>Sayacı durdur</button>
+</div>
+
+<input type="file" id="pdfIn" accept="application/pdf,.pdf" hidden>
+<input type="file" id="imgIn" accept="image/*" hidden>
+<input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
+</body>
+</html>
