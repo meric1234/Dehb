@@ -31,6 +31,16 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="focus-studio.css">
 
+<style>
+  #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
+  #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
+  #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #mp3Pop { width: 280px; }
+  #mp3Pop .mp3-track { font-size: 12px; opacity: .85; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mp3Pop .mp3-vol { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; }
+  #mp3Pop .mp3-vol input { flex: 1; accent-color: #3b82f6; }
+</style>
+
 <!-- Uygulama modülleri (sıra önemli) -->
 <script defer src="storage.js"></script>
 <script defer src="canvas-tools.js"></script>
@@ -92,6 +102,10 @@
       <input id="title" aria-label="Defter başlığı" value="Odak Not" autocomplete="off">
       <span id="saved" aria-live="polite">Kaydedildi</span>
       <button class="ico timer" id="timerBtn" title="Odak sayacı (sessiz)"><span data-icon="timer"></span><b id="timerTxt"></b></button>
+      <button class="ico" id="mp3Btn" title="Odak müziği / MP3 ekle" aria-label="MP3 Ekle">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span id="mp3Name" hidden></span>
+      </button>
       <button class="ico" id="studyBtn" data-icon="study" title="Çalışma özeti"></button>
       <button class="ico" id="paperBtn" data-icon="paper" title="Kâğıt ve sayfa düzeni"></button>
       <button class="ico" id="exportBtn" data-icon="export" title="PDF olarak dışa aktar"></button>
@@ -242,7 +256,8 @@
     <p class="hint small">API anahtarın yalnızca bu cihazda saklanır ve doğrudan Google'a gönderilir. Ücretsiz anahtar: aistudio.google.com/apikey</p>
     <input id="keyIn" type="password" placeholder="Gemini API anahtarı" autocomplete="off">
     <select id="modelIn">
-      <option value="gemini-2.5-flash">gemini-2.5-flash (önerilen)</option>
+      <option value="gemini-3.8-flash">gemini-3.8-flash (önerilen)</option>
+      <option value="gemini-2.5-flash">gemini-2.5-flash</option>
       <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (hızlı, yüksek kota)</option>
       <option value="gemini-flash-latest">gemini-flash-latest (her zaman en yeni)</option>
     </select>
@@ -251,6 +266,16 @@
     <div class="lbl">Kalem ve ekran</div>
     <label class="chk"><input type="checkbox" id="fingerDraw"> Parmakla çizime izin ver (kalemsiz cihazlar; iki parmak kaydırır)</label>
     <label class="chk"><input type="checkbox" id="showMini"> Mini haritayı göster</label>
+    <div class="lbl">S Pen yan tuş görevi</div>
+    <select id="spenAction">
+      <option value="eraser-hold">Basılı tutunca Silgi (bırakınca kaleme dön)</option>
+      <option value="lasso-hold">Basılı tutunca Kement Seçim (bırakınca dön)</option>
+      <option value="eraser-toggle">Tıklayınca Kalem ↔ Silgi değiştir</option>
+      <option value="highlighter-toggle">Tıklayınca Kalem ↔ Fosforlu değiştir</option>
+      <option value="undo">Tıklayınca Son işlemi geri al (Undo)</option>
+      <option value="ai">Tıklayınca Gemini Asistan'ı aç/kapat</option>
+      <option value="none">Kapalı</option>
+    </select>
     <div class="lbl">Depolama</div>
     <div class="progress" id="quotaBar"><i></i></div>
     <p class="hint small" id="quotaTxt"></p>
@@ -278,8 +303,190 @@
   <button class="btn ghost wide" id="timerStop" hidden>Sayacı durdur</button>
 </div>
 
+<div class="pop" id="mp3Pop" data-ui hidden>
+  <div class="lbl">Odak müziği (MP3)</div>
+  <div class="mp3-track" id="mp3Track">Dosya seçilmedi</div>
+  <div class="row">
+    <button type="button" class="btn pri" id="mp3Pick">+ MP3 Seç</button>
+    <button type="button" class="btn" id="mp3Play" disabled>Oynat</button>
+    <button type="button" class="btn" id="mp3Next" hidden>Sonraki</button>
+  </div>
+  <div class="mp3-vol">
+    <span>Ses</span>
+    <input type="range" id="mp3Vol" min="0" max="1" step="0.05" value="0.6">
+    <button type="button" class="btn ghost" id="mp3Loop">Döngü: Açık</button>
+  </div>
+</div>
+
 <input type="file" id="pdfIn" accept="application/pdf,.pdf" hidden>
 <input type="file" id="imgIn" accept="image/*" hidden>
+<input type="file" id="mp3In" accept="audio/*,.mp3,.m4a,.wav,.ogg" multiple hidden>
 <input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  /* 1. Alttaki kronometre çubuğunu gizle (üstteki sayaç korunur) */
+  const hideBottomTimerBar = () => {
+    document.querySelectorAll('#stage > div, #main > div, body > div').forEach(el => {
+      if (['app', 'stage', 'world', 'worldTop', 'empty', 'gizmoBar', 'selMenu', 'tools', 'toolPop', 'toast', 'timerPop', 'mp3Pop'].includes(el.id)) return;
+      if (el.classList.contains('modal')) return;
+      const txt = el.textContent || '';
+      if (txt.includes('Kronometre') && (txt.includes('Sıfırla') || txt.includes('Başlat'))) {
+        el.style.display = 'none';
+      }
+    });
+  };
+  hideBottomTimerBar();
+  setTimeout(hideBottomTimerBar, 300);
+
+  /* 2. Üst bar MP3 oynatıcı */
+  const mp3Btn = document.getElementById('mp3Btn');
+  const mp3Pop = document.getElementById('mp3Pop');
+  const mp3In = document.getElementById('mp3In');
+  const mp3Pick = document.getElementById('mp3Pick');
+  const mp3Play = document.getElementById('mp3Play');
+  const mp3Next = document.getElementById('mp3Next');
+  const mp3Loop = document.getElementById('mp3Loop');
+  const mp3Vol = document.getElementById('mp3Vol');
+  const mp3Track = document.getElementById('mp3Track');
+  const mp3Name = document.getElementById('mp3Name');
+
+  const audio = new Audio();
+  let tracks = [], idx = 0, loop = true;
+  const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
+  audio.volume = Number.isFinite(savedVol) ? savedVol : 0.6;
+  mp3Vol.value = String(audio.volume);
+
+  const syncMp3 = () => {
+    const cur = tracks[idx];
+    const playing = !audio.paused && !!cur;
+    mp3Btn.classList.toggle('playing', playing);
+    mp3Track.textContent = cur ? cur.name : 'Dosya seçilmedi';
+    mp3Name.hidden = !cur;
+    mp3Name.textContent = cur ? cur.name.replace(/\.[^.]+$/, '') : '';
+    mp3Play.disabled = !cur;
+    mp3Play.textContent = playing ? 'Duraklat' : 'Oynat';
+    mp3Next.hidden = tracks.length <= 1;
+    mp3Loop.textContent = loop ? 'Döngü: Açık' : 'Döngü: Kapalı';
+  };
+
+  const playTrack = (i, auto = true) => {
+    if (!tracks.length) return;
+    idx = (i + tracks.length) % tracks.length;
+    audio.src = tracks[idx].url;
+    audio.loop = loop && tracks.length === 1;
+    if (auto) audio.play().catch(() => {});
+    syncMp3();
+  };
+
+  mp3Btn.addEventListener('click', e => {
+    e.stopPropagation();
+    const r = mp3Btn.getBoundingClientRect();
+    mp3Pop.style.top = (r.bottom + 8) + 'px';
+    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 292)) + 'px';
+    const open = mp3Pop.hidden;
+    document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
+    mp3Pop.hidden = !open;
+  });
+
+  mp3Pick.addEventListener('click', () => mp3In.click());
+  mp3In.addEventListener('change', () => {
+    const files = [...(mp3In.files || [])];
+    if (!files.length) return;
+    tracks.forEach(t => URL.revokeObjectURL(t.url));
+    tracks = files.map(f => ({ name: f.name, url: URL.createObjectURL(f) }));
+    playTrack(0, true);
+    mp3In.value = '';
+  });
+  mp3Play.addEventListener('click', () => {
+    if (!tracks.length) return;
+    audio.paused ? audio.play().catch(() => {}) : audio.pause();
+    syncMp3();
+  });
+  mp3Next.addEventListener('click', () => playTrack(idx + 1, true));
+  mp3Loop.addEventListener('click', () => {
+    loop = !loop;
+    audio.loop = loop && tracks.length === 1;
+    syncMp3();
+  });
+  mp3Vol.addEventListener('input', () => {
+    audio.volume = parseFloat(mp3Vol.value) || 0;
+    try { localStorage.setItem('on-mp3-vol', String(audio.volume)); } catch {}
+  });
+  audio.addEventListener('play', syncMp3);
+  audio.addEventListener('pause', syncMp3);
+  audio.addEventListener('ended', () => {
+    if (tracks.length > 1 && (loop || idx + 1 < tracks.length)) playTrack(idx + 1, true);
+    else syncMp3();
+  });
+  document.addEventListener('pointerdown', e => {
+    if (!mp3Pop.hidden && !mp3Pop.contains(e.target) && !mp3Btn.contains(e.target)) mp3Pop.hidden = true;
+  });
+
+  /* 3. S Pen yan tuş görev yönetimi ve Ayarlar senkronizasyonu */
+  const ON = window.ON || (window.ON = {});
+  const spenSel = document.getElementById('spenAction');
+  const getSpenAct = () => (ON.settings?.spenAction) || localStorage.getItem('on-spen-action') || 'eraser-hold';
+  const setSpenAct = val => {
+    if (ON.settings) { ON.settings.spenAction = val; ON.saveSettings?.(); }
+    try { localStorage.setItem('on-spen-action', val); } catch {}
+  };
+  spenSel.value = getSpenAct();
+
+  document.getElementById('openSettings')?.addEventListener('click', () => {
+    setTimeout(() => { spenSel.value = getSpenAct(); }, 0);
+  });
+  spenSel.addEventListener('change', () => setSpenAct(spenSel.value));
+  document.getElementById('setForm')?.addEventListener('submit', () => setSpenAct(spenSel.value));
+
+  const activeTool = () => document.querySelector('#toolBtns [data-tool].on')?.dataset.tool || 'pen';
+  const switchTool = t => {
+    if (!t || activeTool() === t) return;
+    document.querySelector(`#toolBtns [data-tool="${t}"]`)?.click();
+  };
+
+  let barrelDown = false, prevTool = null;
+  const handleBarrelDown = () => {
+    const act = getSpenAct();
+    if (act === 'none') return;
+    if (act === 'eraser-hold' || act === 'lasso-hold') {
+      const target = act === 'eraser-hold' ? 'eraser' : 'lasso';
+      const cur = activeTool();
+      if (cur !== target) { prevTool = cur; switchTool(target); }
+    } else if (act === 'eraser-toggle') {
+      switchTool(activeTool() === 'eraser' ? 'pen' : 'eraser');
+    } else if (act === 'highlighter-toggle') {
+      switchTool(activeTool() === 'highlighter' ? 'pen' : 'highlighter');
+    } else if (act === 'undo') {
+      document.getElementById('undo')?.click();
+      ON.app?.toast?.('Geri alındı (S Pen)');
+    } else if (act === 'ai') {
+      document.getElementById('aiOpen')?.click();
+    }
+  };
+  const handleBarrelUp = () => {
+    if (prevTool) { switchTool(prevTool); prevTool = null; }
+  };
+
+  window.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'pen') return;
+    if (((e.buttons & 32) !== 0 || e.button === 5) && !barrelDown) { barrelDown = true; handleBarrelDown(); }
+  }, { capture: true });
+  window.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'pen') return;
+    const pressed = (e.buttons & 32) !== 0;
+    if (pressed && !barrelDown) { barrelDown = true; handleBarrelDown(); }
+    else if (!pressed && barrelDown) { barrelDown = false; handleBarrelUp(); }
+  }, { capture: true });
+  const onPenUp = e => {
+    if (e.pointerType === 'pen' && barrelDown) { barrelDown = false; handleBarrelUp(); }
+  };
+  window.addEventListener('pointerup', onPenUp, { capture: true });
+  window.addEventListener('pointercancel', onPenUp, { capture: true });
+  window.addEventListener('contextmenu', e => {
+    if (getSpenAct() !== 'none' && (barrelDown || e.pointerType === 'pen')) e.preventDefault();
+  }, { capture: true });
+});
+</script>
 </body>
 </html>
