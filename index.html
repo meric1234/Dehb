@@ -658,10 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
       badge: 'Yağmur',
       synth: 'rain',
       candidates: [
-        'audio/mixkit-long-rain-ambience-1247.wav',
-        'mixkit-long-rain-ambience-1247.wav',
-        'audio/rain.wav',
-        'audio/rain.mp3'
+        'audio/mixkit-urban-city-ambience-at-night-2678 (compressed by happyscribe.com).wav',
+        'mixkit-urban-city-ambience-at-night-2678 (compressed by happyscribe.com).wav'
       ]
     },
     piano: {
@@ -954,8 +952,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const upgradeWithFileIfAvailable = async (meta, token) => {
     if (!meta.candidates) return;
-    for (const url of meta.candidates) {
+    for (const rawUrl of meta.candidates) {
       if (token !== playToken) return;
+      const url = encodeURI(rawUrl);
       try {
         const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) continue;
