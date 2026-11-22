@@ -35,11 +35,11 @@
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #mp3Pop { width: 306px; }
-  #mp3Pop .mp3-track { font-size: 12px; opacity: .85; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mp3Pop { width: 312px; max-height: calc(100vh - 72px); overflow-y: auto; z-index: 95; }
+  #mp3Pop .mp3-track { font-size: 12px; opacity: .9; margin: 4px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
   #mp3Pop .mp3-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin: 6px 0 8px; }
-  #mp3Pop .mp3-presets .btn { font-size: 11px; padding: 5px 7px; justify-content: flex-start; text-align: left; }
-  #mp3Pop .mp3-presets .btn.active-snd { background: rgba(59, 130, 246, 0.22); border-color: #3b82f6; color: #93c5fd; }
+  #mp3Pop .mp3-presets .btn { font-size: 11px; padding: 6px 8px; justify-content: flex-start; text-align: left; }
+  #mp3Pop .mp3-presets .btn.active-snd { background: rgba(59, 130, 246, 0.24); border-color: #3b82f6; color: #93c5fd; font-weight: 600; }
   #mp3Pop .mp3-seek-box { margin: 8px 0; }
   #mp3Pop .mp3-seek-row { display: flex; align-items: center; gap: 6px; }
   #mp3Pop .mp3-seek-row input[type="range"] { flex: 1; accent-color: #3b82f6; }
@@ -361,12 +361,14 @@
     <button type="button" class="btn" id="mp3Play" disabled>Oynat</button>
     <button type="button" class="btn" id="mp3Next" hidden>Sonraki</button>
   </div>
-  <div class="lbl" style="margin-top:8px;">DEHB Odak Sesleri</div>
+  <div class="lbl" style="margin-top:8px;">DEHB Odaklanma Müzikleri &amp; Sesleri</div>
   <div class="mp3-presets" id="adhdPresets">
     <button type="button" class="btn" data-snd="brown">🧠 Brown Noise</button>
     <button type="button" class="btn" data-snd="pink">🌧️ Pink Noise</button>
     <button type="button" class="btn" data-snd="gamma40">⚡ 40Hz Binaural</button>
     <button type="button" class="btn" data-snd="cafe">☕ Kafe / Kütüphane</button>
+    <button type="button" class="btn" data-snd="lofi">🎹 Sakin Lo-Fi Akor</button>
+    <button type="button" class="btn" data-snd="theta">🌊 6Hz Theta Odak</button>
   </div>
   <div class="mp3-seek-box">
     <div class="mp3-seek-row">
@@ -392,11 +394,14 @@
 <input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
 
 <script>
-/* Eski Service Worker önbelleğini temizle ki yeni HTML anında görünsün */
+/* Eski Service Worker ve Cache Storage önbelleğini temizle ki yeni HTML mutlaka yüklensin */
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then(regs => {
     regs.forEach(r => r.update());
   }).catch(() => {});
+}
+if ('caches' in window) {
+  caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
 }
 
 /* ================= Estetik Metin / Formül Temizleyici ($ Kaldırma) ================= */
@@ -442,10 +447,8 @@ function prettifyMathText(raw) {
   };
 
   let out = raw;
-  // Blok $$...$$ ve satır içi $...$ ifadelerini estetik formata çevir
   out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
   out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
-  // Kenarda kalmış tekil $ işaretlerini temizle (para birimi gibi olmayan formül artıklarını)
   out = out.replace(/(\s)\$(\s|$)/g, '$1$2');
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
@@ -466,7 +469,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { capture: true });
   });
 
-  // Yapıştırma sırasında formül yanındaki $ işaretlerini otomatik temizle ve estetik hale getir
   document.addEventListener('paste', e => {
     const target = e.target;
     if (!isTextEditable(target)) return;
@@ -499,7 +501,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }, { capture: true });
 
-  // Asistan çıktısını panoya kopyalarken veya tuvale sabitlerken $ işaretlerini temizle
   const outEl = document.getElementById('out');
   document.getElementById('copyOut')?.addEventListener('click', () => {
     const txt = outEl?.innerText || outEl?.textContent || '';
@@ -508,7 +509,6 @@ document.addEventListener('DOMContentLoaded', () => {
     navigator.clipboard?.writeText(clean).catch(() => {});
   }, { capture: true });
 
-  // Tuvale sabitlenen kartlardaki $ işaretlerini otomatik temizleyen gözlemci
   const worldTop = document.getElementById('worldTop');
   if (worldTop) {
     const cleanNodeText = root => {
@@ -527,7 +527,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (n.nodeType === 1) {
           cleanNodeText(n);
           n.querySelectorAll?.('[contenteditable], textarea, input').forEach(ctrl => {
-            ctrl.setAttribute('contenteditable', ctrl.hasAttribute('contenteditable') ? 'true' : ctrl.getAttribute('contenteditable') || '');
             ctrl.style.userSelect = 'text';
             ctrl.style.webkitUserSelect = 'text';
             ctrl.style.webkitTouchCallout = 'default';
@@ -596,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
   hideBottomTimerBar();
   setTimeout(hideBottomTimerBar, 300);
 
-  /* 2. Üst bar MP3 oynatıcı + DEHB Odak Sesleri + İleri/Geri Alma */
+  /* 2. Üst bar MP3 oynatıcı + DEHB Odaklanma Müzikleri & Sesleri + İleri/Geri Alma */
   const mp3Btn = document.getElementById('mp3Btn');
   const mp3Pop = document.getElementById('mp3Pop');
   const mp3In = document.getElementById('mp3In');
@@ -616,7 +615,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const audio = new Audio();
   let tracks = [], idx = 0, loop = true, seeking = false;
-  let audioCtx = null, synthGain = null, synthNodes = [], activePreset = null;
+  let audioCtx = null, synthGain = null, synthNodes = [], synthTimer = null, activePreset = null;
 
   const savedVol = parseFloat(localStorage.getItem('on-mp3-vol'));
   const volVal = Number.isFinite(savedVol) ? savedVol : 0.6;
@@ -627,10 +626,13 @@ document.addEventListener('DOMContentLoaded', () => {
     brown: 'Brown Noise (Derin Odak)',
     pink: 'Pink Noise (Yumuşak Yağmur)',
     gamma40: '40Hz Binaural (Gamma Odak)',
-    cafe: 'Kafe / Kütüphane Uğultusu'
+    cafe: 'Kafe / Kütüphane Uğultusu',
+    lofi: 'Sakin Lo-Fi Akor Döngüsü',
+    theta: '6Hz Theta Odak Dalgaları'
   };
 
   const stopSynth = () => {
+    if (synthTimer) { clearInterval(synthTimer); synthTimer = null; }
     synthNodes.forEach(n => {
       try { n.stop?.(); } catch {}
       try { n.disconnect?.(); } catch {}
@@ -685,7 +687,6 @@ document.addEventListener('DOMContentLoaded', () => {
             b6 = w * 0.115926;
           }
         } else {
-          // Kafe / Kütüphane: yumuşak düşük-orta bant gürültüsü + hafif mırıltı modülasyonu
           let last = 0;
           for (let i = 0; i < len; i++) {
             const w = Math.random() * 2 - 1;
@@ -712,15 +713,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       src.start();
       synthNodes.push(src);
-    } else if (type === 'gamma40') {
-      // 40Hz Binaural (Sol 200Hz, Sağ 240Hz)
+    } else if (type === 'gamma40' || type === 'theta') {
+      const baseFreq = type === 'gamma40' ? 200 : 174;
+      const beatHz = type === 'gamma40' ? 40 : 6;
       const merger = audioCtx.createChannelMerger(2);
       const oscL = audioCtx.createOscillator();
       const oscR = audioCtx.createOscillator();
       oscL.type = 'sine';
       oscR.type = 'sine';
-      oscL.frequency.value = 200;
-      oscR.frequency.value = 240;
+      oscL.frequency.value = baseFreq;
+      oscR.frequency.value = baseFreq + beatHz;
 
       const gL = audioCtx.createGain();
       const gR = audioCtx.createGain();
@@ -736,6 +738,42 @@ document.addEventListener('DOMContentLoaded', () => {
       oscL.start();
       oscR.start();
       synthNodes.push(oscL, oscR, gL, gR, merger);
+    } else if (type === 'lofi') {
+      // Sakin elektrik piyano akorları (Cmaj7 -> Am7 -> Fmaj7 -> G6)
+      const chords = [
+        [261.63, 329.63, 392.00, 493.88],
+        [220.00, 261.63, 329.63, 392.00],
+        [174.61, 220.00, 261.63, 349.23],
+        [196.00, 246.94, 293.66, 329.63]
+      ];
+      let step = 0;
+      const lp = audioCtx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 950;
+      lp.connect(synthGain);
+      synthNodes.push(lp);
+
+      const triggerChord = () => {
+        if (!synthGain || audioCtx.state === 'closed') return;
+        const notes = chords[step % chords.length];
+        step++;
+        const now = audioCtx.currentTime;
+        notes.forEach((freq, idxN) => {
+          const osc = audioCtx.createOscillator();
+          const env = audioCtx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + idxN * 0.04);
+          env.gain.setValueAtTime(0.0001, now + idxN * 0.04);
+          env.gain.linearRampToValueAtTime(0.14, now + idxN * 0.04 + 0.12);
+          env.gain.exponentialRampToValueAtTime(0.001, now + 2.35);
+          osc.connect(env);
+          env.connect(lp);
+          osc.start(now + idxN * 0.04);
+          osc.stop(now + 2.4);
+        });
+      };
+      triggerChord();
+      synthTimer = setInterval(triggerChord, 2400);
     }
 
     activePreset = type;
@@ -827,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.stopPropagation();
     const r = mp3Btn.getBoundingClientRect();
     mp3Pop.style.top = (r.bottom + 8) + 'px';
-    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 318)) + 'px';
+    mp3Pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 324)) + 'px';
     const open = mp3Pop.hidden;
     document.querySelectorAll('.pop').forEach(p => { p.hidden = true; });
     mp3Pop.hidden = !open;
