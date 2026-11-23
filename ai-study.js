@@ -1,7 +1,8 @@
 /* =====================================================================
    Odak Not — ai-study.js
    Gemini istemcisi (tüm aktif modellerde canlı keşif + tam yedekleme),
-   Asistan paneli, Markdown + KaTeX, StickyCardManager, StudyGuideBuilder.
+   Asistan paneli, Markdown + KaTeX, StickyCardManager,
+   StudyGuideBuilder ve İnteraktif Sınav + S Pen Karalama Motoru.
    API anahtarı koda gömülmez; kullanıcı arayüzden girer (localStorage).
    ===================================================================== */
 'use strict';
@@ -397,10 +398,214 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
   ON.StickyCardManager = StickyCardManager;
   ON.CARD_COLORS = { krem: ['#FFF8E7', '#1E293B'], nane: ['#E2F7EE', '#0F2E24'], gokyuzu: ['#E0EFFF', '#102542'], koyu: ['#131926', '#F1F5F9'] };
 
+  /* ================= İnteraktif Sınav & S Pen Karalama Yardımcısı ================= */
+  function injectQuizStyles() {
+    if ($('on-quiz-style')) return;
+    const st = document.createElement('style');
+    st.id = 'on-quiz-style';
+    st.textContent = `
+      #studyDlg .card.wide { max-height: 90dvh; overflow-y: auto; }
+      #sgQuizOut { white-space: normal !important; max-height: none !important; padding: 0 !important; background: transparent !important; border: none !important; overflow: visible !important; }
+      #onQuizApp { margin-top: 10px; display: flex; flex-direction: column; gap: 12px; color: #F2EFFB; font-family: inherit; }
+      .qz-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.09); }
+      .qz-stats { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; }
+      .qz-badge { padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(96,165,250,.18); color: #93C5FD; border: 1px solid rgba(96,165,250,.38); font-variant-numeric: tabular-nums; }
+      .qz-badge.ok { background: rgba(46,204,113,.16); color: #7EE8A8; border-color: rgba(46,204,113,.35); }
+      .qz-badge.bad { background: rgba(255,90,126,.16); color: #FF9BB0; border-color: rgba(255,90,126,.35); }
+      .qz-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+      .qz-pill { padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(255,255,255,.06); color: #E2DCF5; border: 1px solid rgba(255,255,255,.12); cursor: pointer; transition: .15s; }
+      .qz-pill:hover:not(:disabled) { background: rgba(255,255,255,.13); }
+      .qz-pill:disabled { opacity: .45; cursor: default; }
+      .qz-pill.on { background: #3B82F6; color: #fff; border-color: #60A5FA; }
+      .qz-pill.ok-btn { background: rgba(46,204,113,.18); border-color: #2ECC71; color: #9CF5BE; }
+      .qz-pill.bad-btn { background: rgba(255,90,126,.18); border-color: #FF5A7E; color: #FFADC0; }
+      .qz-dots { display: flex; flex-wrap: wrap; gap: 6px; }
+      .qz-dot { width: 28px; height: 28px; border-radius: 8px; font-size: 12px; font-weight: 700; display: grid; place-items: center; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12); color: #D8D1EC; cursor: pointer; }
+      .qz-dot.cur { outline: 2px solid #60A5FA; outline-offset: 1px; }
+      .qz-dot.correct { background: rgba(46,204,113,.22); border-color: #2ECC71; color: #9CF5BE; }
+      .qz-dot.wrong { background: rgba(255,90,126,.22); border-color: #FF5A7E; color: #FFADC0; }
+      .qz-card { padding: 14px 16px; border-radius: 14px; background: #121722; border: 1px solid rgba(255,255,255,.1); display: flex; flex-direction: column; gap: 11px; }
+      .qz-qhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+      .qz-qnum { font-size: 12px; font-weight: 700; color: #94A3B8; text-transform: uppercase; letter-spacing: .04em; }
+      .qz-diff { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: rgba(255,255,255,.07); color: #CBD5E1; }
+      .qz-qtext { font-size: 15px; line-height: 1.55; font-weight: 500; color: #F8FAFC; }
+      .qz-opts { display: flex; flex-direction: column; gap: 8px; }
+      .qz-opt { display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 11px; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.11); color: #ECE7FA; font-size: 14px; line-height: 1.45; cursor: pointer; transition: .15s; }
+      .qz-opt:hover:not(:disabled) { background: rgba(59,130,246,.16); border-color: rgba(96,165,250,.5); }
+      .qz-opt:disabled { cursor: default; }
+      .qz-opt .key { flex: 0 0 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: rgba(255,255,255,.09); color: #E2E8F0; }
+      .qz-opt.correct { background: rgba(46,204,113,.16); border-color: #2ECC71; color: #E8FFF1; }
+      .qz-opt.correct .key { background: #2ECC71; color: #082414; }
+      .qz-opt.wrong { background: rgba(255,90,126,.16); border-color: #FF5A7E; color: #FFE8EE; }
+      .qz-opt.wrong .key { background: #FF5A7E; color: #2B0610; }
+      .qz-open-box { display: flex; flex-direction: column; gap: 8px; }
+      .qz-open-input { width: 100%; box-sizing: border-box; padding: 9px 12px; border-radius: 10px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.14); color: #F8FAFC; font-size: 13.5px; font-family: inherit; }
+      .qz-hint-box { padding: 9px 12px; border-radius: 10px; background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.32); color: #FDE68A; font-size: 13px; line-height: 1.45; }
+      .qz-exp { padding: 11px 13px; border-radius: 11px; background: rgba(45,212,191,.09); border: 1px solid rgba(45,212,191,.3); color: #CCFBF1; font-size: 13.5px; line-height: 1.55; }
+      .qz-exp b { color: #5EEAD4; display: block; margin-bottom: 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      .qz-scratch { border-radius: 10px; border: 1px dashed rgba(96,165,250,.45); background: #0B0E14; overflow: hidden; }
+      .qz-scratch-bar { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; padding: 5px 10px; background: rgba(255,255,255,.04); font-size: 11px; color: #94A3B8; }
+      .qz-scratch canvas { display: block; width: 100%; height: 165px; touch-action: none; cursor: crosshair; }
+      .qz-ai-fb { padding: 9px 12px; border-radius: 10px; background: rgba(96,165,250,.1); border: 1px solid rgba(96,165,250,.3); color: #DBEAFE; font-size: 13px; line-height: 1.5; }
+      .qz-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+      .qz-summary { padding: 14px 16px; border-radius: 14px; background: linear-gradient(135deg, rgba(59,130,246,.22), rgba(45,212,191,.12)); border: 1px solid rgba(96,165,250,.38); display: flex; flex-direction: column; gap: 10px; }
+      .qz-summary-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      .qz-loading { padding: 18px; text-align: center; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px dashed rgba(255,255,255,.15); font-size: 13.5px; color: #93C5FD; }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function formatRichText(raw) {
+    let html = esc(String(raw || ''));
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/\n/g, '<br>');
+    const decodeEntities = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    if (window.katex) {
+      html = html.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
+        try { return window.katex.renderToString(decodeEntities(tex), { displayMode: true, throwOnError: false }); }
+        catch { return `$$${tex}$$`; }
+      });
+      html = html.replace(/\$([^$\n]+?)\$/g, (_, tex) => {
+        try { return window.katex.renderToString(decodeEntities(tex), { displayMode: false, throwOnError: false }); }
+        catch { return `$${tex}$`; }
+      });
+    } else if (window.prettifyMathText) {
+      html = window.prettifyMathText(html);
+    }
+    return html;
+  }
+
+  function safeParseQuizJSON(raw) {
+    const s = String(raw || '').trim();
+    const start = s.indexOf('[');
+    const end = s.lastIndexOf(']');
+    if (start === -1 || end === -1 || end <= start) return null;
+    let jsonStr = s.slice(start, end + 1)
+      .replace(/,\s*([}\]])/g, '$1')
+      // LaTeX ters eğik çizgilerinin JSON.parse hatası vermesini önle
+      .replace(/\\(?!["\\/bfnrtu])/g, '\\\\');
+    let arr;
+    try {
+      arr = JSON.parse(jsonStr);
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(arr) || !arr.length) return null;
+
+    return arr.map((item, idx) => {
+      const kind = item.kind === 'open' || (!Array.isArray(item.options) || item.options.length < 2) ? 'open' : 'mcq';
+      const opts = kind === 'mcq'
+        ? item.options.slice(0, 4).map(o => String(o).replace(/^[A-Da-d][).:\-]\s*/, '').trim())
+        : [];
+      while (kind === 'mcq' && opts.length < 4) opts.push('—');
+      let ans = Number(item.answer);
+      if (!Number.isInteger(ans) || ans < 0 || ans > 3) ans = 0;
+      return {
+        id: idx,
+        kind,
+        q: String(item.q || item.question || '').trim(),
+        options: opts,
+        answer: ans,
+        hint: String(item.hint || '').trim(),
+        explanation: String(item.explanation || item.solution || 'Çözüm açıklaması belirtilmedi.').trim(),
+        difficulty: String(item.difficulty || 'Orta').trim()
+      };
+    }).filter(x => x.q);
+  }
+
+  function questionsToMarkdown(questions) {
+    const letters = ['A', 'B', 'C', 'D'];
+    const body = questions.map((item, i) => {
+      if (item.kind === 'open') {
+        return `${i + 1}. [Klasik · ${item.difficulty}] ${item.q}`;
+      }
+      const opts = item.options.map((o, oi) => `   ${letters[oi]}) ${o}`).join('\n');
+      return `${i + 1}. [${item.difficulty}] ${item.q}\n${opts}`;
+    }).join('\n\n');
+
+    const key = questions.map((item, i) => {
+      if (item.kind === 'open') return `${i + 1}) **Çözüm:** ${item.explanation}`;
+      return `${i + 1}) **${letters[item.answer]}** — ${item.explanation}`;
+    }).join('\n');
+
+    return `## Sınav Soruları\n\n${body}\n\n---\n### Cevap Anahtarı ve Çözümler\n${key}`;
+  }
+
+  function bindScratchpad(canvas, savedDataUrl, onSave) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const rect = canvas.getBoundingClientRect();
+    const w = Math.max(260, Math.round(rect.width || 520));
+    const h = 165;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#60A5FA';
+
+    if (savedDataUrl) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+      img.src = savedDataUrl;
+    }
+
+    let drawing = false, lx = 0, ly = 0;
+    canvas.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      canvas.setPointerCapture(e.pointerId);
+      const r = canvas.getBoundingClientRect();
+      lx = e.clientX - r.left;
+      ly = e.clientY - r.top;
+      drawing = true;
+      const isErase = e.pointerType === 'pen' && ((e.buttons & 32) || (e.buttons & 2));
+      ctx.globalCompositeOperation = isErase ? 'destination-out' : 'source-over';
+      ctx.lineWidth = isErase ? 16 : (e.pointerType === 'pen' && e.pressure > 0 ? 1.2 + e.pressure * 2.1 : 2);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!drawing) return;
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      ctx.beginPath();
+      ctx.moveTo(lx, ly);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lx = x; ly = y;
+    });
+    const endDraw = () => {
+      if (!drawing) return;
+      drawing = false;
+      onSave(canvas.toDataURL('image/png'));
+    };
+    canvas.addEventListener('pointerup', endDraw);
+    canvas.addEventListener('pointercancel', endDraw);
+  }
+
+  function exportScratchForVision(dataUrl) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas');
+        cv.width = img.width || 600;
+        cv.height = img.height || 200;
+        const c = cv.getContext('2d');
+        c.fillStyle = '#0B0E14';
+        c.fillRect(0, 0, cv.width, cv.height);
+        c.drawImage(img, 0, 0);
+        const out = cv.toDataURL('image/jpeg', 0.88);
+        resolve(out.split(',')[1]);
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  }
+
   /* ================= StudyGuideBuilder ================= */
   const HL_NAMES = { '#FFE45C': 'Sarı', '#8EF0A6': 'Yeşil', '#FF9ECF': 'Pembe', '#8FD3FF': 'Mavi', '#C7B3FF': 'Mor' };
   class StudyGuideBuilder {
-    constructor() { this.items = []; this.filter = { type: 'all', color: 'all' }; this.quiz = ''; }
+    constructor() { this.items = []; this.filter = { type: 'all', color: 'all' }; this.quiz = ''; this.quizData = []; }
     async collect() {
       const app = ON.app, nb = app.nb, out = [];
       for (let i = 0; i < nb.pages.length; i++) {
@@ -494,18 +699,422 @@ satır içi $...$, blok $$...$$. Giriş/kapanış cümlesi yazma. Emin olmadığ
       ON.app.closeModal('studyDlg');
       await ON.app.addSummaryPage(md);
     }
-    async makeQuiz() {
+
+    async _gatherQuizContext() {
+      const app = ON.app;
+      const chunks = [];
+      if (this.items.length > 0) {
+        chunks.push(this.toMarkdown(this.items).slice(0, 14000));
+      }
+      if (app.nb) {
+        const objTexts = (app.nb.objects || []).filter(o => o.type === 'text' && o.text?.trim()).map(o => o.text.trim()).join('\n');
+        if (objTexts) chunks.push('Sayfa Metin Kutuları:\n' + objTexts.slice(0, 3000));
+
+        if (app.search && typeof app.search.pageText === 'function' && typeof app.currentPage === 'function') {
+          try {
+            const curP = app.nb.pages[app.currentPage()];
+            if (curP && curP.k === 'pdf') {
+              const pt = await app.search.pageText(curP.n);
+              if (pt) chunks.push('Aktif PDF Sayfası Metni:\n' + pt.slice(0, 4000));
+            }
+          } catch {}
+        }
+      }
+      let imgPart = null;
+      if (chunks.join('').length < 220 && app.contextImage) {
+        try {
+          const img = await app.contextImage();
+          if (img && img.b64) {
+            imgPart = { inline_data: { mime_type: img.mime || 'image/jpeg', data: img.b64 } };
+          }
+        } catch {}
+      }
+      return { text: chunks.join('\n\n'), imgPart };
+    }
+
+    async makeQuiz(opts = {}) {
       if (!ON.settings.key) { ON.app.toast('Önce Ayarlar\'dan Gemini API anahtarını ekle'); ON.app.openSettings(); return; }
-      const content = this.toMarkdown(this.items);
-      if (this.items.length === 0) { ON.app.toast('Önce birkaç yeri vurgula'); return; }
-      const box = $('sgQuiz'); box.hidden = false;
+      injectQuizStyles();
+
+      const count = opts.count || 5;
+      const box = $('sgQuiz');
       const out = $('sgQuizOut');
-      out.innerHTML = `<p class="hint"><span class="dots"><i></i><i></i><i></i></span> Sorular hazırlanıyor…</p>`;
+      box.hidden = false;
+      out.innerHTML = `<div id="onQuizApp"><div class="qz-loading"><span class="dots"><i></i><i></i><i></i></span> Notların analiz ediliyor ve ${count} adet interaktif sınav sorusu hazırlanıyor…</div></div>`;
+      out.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+      const mount = $('onQuizApp');
       try {
-        const res = await ON.gemini(ON.settings, [{ text: `Aşağıdaki çalışma notlarına dayanarak sınav soruları hazırla: 3 çoktan seçmeli (4 şık) ve 2 açık uçlu soru. Formülleri LaTeX ile yaz. Cevap anahtarını en sona "### Cevaplar" başlığıyla koy.\n\n${content.slice(0, 24000)}` }], t => { out.innerHTML = `<p class="hint">${esc(t)}</p>`; });
-        this.quiz = res.text;
-        ON.mdInto(out, res.text);
-      } catch (err) { out.innerHTML = `<p class="hint" style="white-space:pre-line">${esc(err.message)}</p>`; }
+        const ctx = await this._gatherQuizContext();
+        if (!ctx.text && !ctx.imgPart) {
+          mount.innerHTML = `<div class="qz-loading">Soru üretmek için önce sayfaya bir şeyler yaz, PDF aç ya da birkaç yeri vurgula.</div>`;
+          return;
+        }
+
+        const mcqCount = Math.max(3, count - 1);
+        const openCount = Math.max(1, count - mcqCount);
+        const prompt = [
+          `Aşağıdaki ders notlarına dayanarak Türkçe, öğretici ve mühendislik sınavı kalitesinde toplam ${count} soru üret (${mcqCount} çoktan seçmeli + ${openCount} klasik işlem/yorum sorusu).`,
+          `Kurallar:`,
+          `- SADECE geçerli bir JSON dizisi (array) döndür; başına veya sonuna hiçbir açıklama veya markdown kod bloğu yazma.`,
+          `- Matematiksel ifadeler ve formüller için LaTeX kullan ($...$ veya $$...$$).`,
+          `- Çoktan seçmeli soru şeması:`,
+          `  {"kind":"mcq","q":"Soru metni","options":["Şık A","Şık B","Şık C","Şık D"],"answer":0,"hint":"Kısa ipucu veya ilgili formül","explanation":"Adım adım çözüm açıklaması","difficulty":"Temel|Orta|Zor"}`,
+          `- Klasik (açık uçlu) soru şeması:`,
+          `  {"kind":"open","q":"Soru metni","hint":"Kısa ipucu","explanation":"Adım adım tam çözüm ve nihai sonuç","difficulty":"Orta|Zor"}`,
+          `- "answer" alanı doğru şıkkın 0 tabanlı indeksidir (0, 1, 2 veya 3).`,
+          ctx.text ? `\nDers İçeriği:\n${ctx.text}` : '\nEkli sayfa görüntüsündeki el yazısı/notları analiz et.'
+        ].join('\n');
+
+        const parts = [];
+        if (ctx.imgPart) parts.push(ctx.imgPart);
+        parts.push({ text: prompt });
+
+        const res = await ON.gemini(ON.settings, parts, t => {
+          const ld = mount.querySelector('.qz-loading');
+          if (ld && t) ld.textContent = t;
+        });
+
+        const questions = safeParseQuizJSON(res.text);
+        if (!questions || !questions.length) {
+          this.quiz = res.text;
+          ON.mdInto(out, res.text);
+          return;
+        }
+
+        this.quizData = questions;
+        this.quiz = questionsToMarkdown(questions);
+        this._renderInteractiveQuiz(mount, questions);
+      } catch (err) {
+        mount.innerHTML = `<div class="qz-loading" style="color:#FF9BB0;white-space:pre-line">${esc(err.message || err)}</div>`;
+      }
+    }
+
+    _renderInteractiveQuiz(mount, allQuestions) {
+      const state = {
+        questions: allQuestions.slice(),
+        results: new Map(),      // q.id -> { correct: boolean, chosen?: number, userText?: string }
+        openRevealed: new Set(), // q.id
+        hintsOpen: new Set(),    // q.id
+        scratchOpen: new Set(),  // q.id
+        scratchData: new Map(),  // q.id -> dataUrl
+        scratchFeedback: new Map(), // q.id -> string
+        mode: 'single',          // 'single' | 'list'
+        curIdx: 0,
+        startedAt: Date.now()
+      };
+      const letters = ['A', 'B', 'C', 'D'];
+
+      const elapsedStr = () => {
+        const sec = Math.floor((Date.now() - state.startedAt) / 1000);
+        return `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
+      };
+
+      const metrics = () => {
+        let correct = 0, wrong = 0;
+        for (const q of state.questions) {
+          const r = state.results.get(q.id);
+          if (!r) continue;
+          if (r.correct) correct++;
+          else wrong++;
+        }
+        return { correct, wrong, answered: correct + wrong, total: state.questions.length };
+      };
+
+      const renderCard = (q, idx, showNav) => {
+        const res = state.results.get(q.id) || null;
+        const isSolved = res !== null;
+        const hintVisible = state.hintsOpen.has(q.id);
+        const scratchVisible = state.scratchOpen.has(q.id);
+        const openShown = state.openRevealed.has(q.id);
+        const aiFb = state.scratchFeedback.get(q.id) || '';
+
+        let bodyControlHtml = '';
+        if (q.kind === 'mcq') {
+          const optsHtml = q.options.map((opt, oi) => {
+            let cls = 'qz-opt';
+            if (isSolved) {
+              if (oi === q.answer) cls += ' correct';
+              else if (oi === res.chosen) cls += ' wrong';
+            }
+            return `<button type="button" class="${cls}" data-qid="${q.id}" data-oi="${oi}" ${isSolved ? 'disabled' : ''}>
+              <span class="key">${letters[oi]}</span>
+              <span>${formatRichText(opt)}</span>
+            </button>`;
+          }).join('');
+          bodyControlHtml = `<div class="qz-opts">${optsHtml}</div>`;
+        } else {
+          bodyControlHtml = `
+            <div class="qz-open-box">
+              <input type="text" class="qz-open-input" data-open-in="${q.id}" placeholder="İstersen cevabını yaz veya S Pen karalama alanını kullan…" value="${esc(res?.userText || '')}">
+              ${!openShown && !isSolved ? `<div><button type="button" class="qz-pill on" data-reveal-open="${q.id}">Çözümü Göster</button></div>` : ''}
+              ${(openShown || isSolved) ? `
+                <div class="qz-exp"><b>Adım Adım Çözüm</b>${formatRichText(q.explanation)}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                  <span style="font-size:12px;color:#94A3B8">Kendini değerlendir:</span>
+                  <button type="button" class="qz-pill ${res?.correct === true ? 'ok-btn' : ''}" data-grade-open="${q.id}" data-ok="1">✓ Doğru Yaptım</button>
+                  <button type="button" class="qz-pill ${res?.correct === false ? 'bad-btn' : ''}" data-grade-open="${q.id}" data-ok="0">✕ Tekrar Çalışmalıyım</button>
+                </div>
+              ` : ''}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="qz-card">
+            <div class="qz-qhead">
+              <span class="qz-qnum">Soru ${idx + 1} / ${state.questions.length} ${q.kind === 'open' ? '· Klasik' : ''}</span>
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <button type="button" class="qz-pill ${scratchVisible ? 'on' : ''}" data-scratch="${q.id}">Karalama (S Pen)</button>
+                ${!isSolved && q.hint ? `<button type="button" class="qz-pill" data-hint="${q.id}">${hintVisible ? 'İpucunu Gizle' : 'İpucu'}</button>` : ''}
+                <span class="qz-diff">${esc(q.difficulty)}</span>
+              </div>
+            </div>
+            <div class="qz-qtext">${formatRichText(q.q)}</div>
+            ${scratchVisible ? `
+              <div class="qz-scratch">
+                <div class="qz-scratch-bar">
+                  <span>S Pen İşlem Alanı (yan tuş: silgi)</span>
+                  <div style="display:flex;gap:6px">
+                    <button type="button" class="qz-pill" style="padding:2px 8px;font-size:11px" data-scratch-check="${q.id}">Çizimimi Kontrol Et</button>
+                    <button type="button" class="qz-pill" style="padding:2px 8px;font-size:11px" data-scratch-clear="${q.id}">Temizle</button>
+                  </div>
+                </div>
+                <canvas data-scratch-cv="${q.id}"></canvas>
+              </div>
+              ${aiFb ? `<div class="qz-ai-fb">${formatRichText(aiFb)}</div>` : ''}
+            ` : ''}
+            ${hintVisible && !isSolved && q.hint ? `<div class="qz-hint-box"><strong>İpucu:</strong> ${formatRichText(q.hint)}</div>` : ''}
+            ${bodyControlHtml}
+            ${q.kind === 'mcq' && isSolved ? `<div class="qz-exp"><b>${res.correct ? 'Doğru Cevap ✓' : `Yanlış — Doğru Şık: ${letters[q.answer]}`} · Adım Adım Çözüm</b>${formatRichText(q.explanation)}</div>` : ''}
+            ${showNav ? `
+              <div class="qz-nav">
+                <button type="button" class="qz-pill" data-nav="-1" ${idx === 0 ? 'disabled' : ''}>← Önceki</button>
+                <button type="button" class="qz-pill on" data-nav="1" ${idx >= state.questions.length - 1 ? 'disabled' : ''}>Sonraki Soru →</button>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      };
+
+      const draw = () => {
+        const m = metrics();
+        const finished = m.answered === m.total && m.total > 0;
+        const pct = m.total ? Math.round((m.correct / m.total) * 100) : 0;
+
+        const dotsHtml = state.questions.map((q, i) => {
+          const r = state.results.get(q.id);
+          const cls = 'qz-dot' + (state.mode === 'single' && i === state.curIdx ? ' cur' : '') + (r ? (r.correct ? ' correct' : ' wrong') : '');
+          return `<button type="button" class="${cls}" data-jump="${i}">${i + 1}</button>`;
+        }).join('');
+
+        const bodyHtml = state.mode === 'single'
+          ? renderCard(state.questions[state.curIdx], state.curIdx, true)
+          : state.questions.map((q, i) => renderCard(q, i, false)).join('');
+
+        mount.innerHTML = `
+          <div class="qz-top">
+            <div class="qz-stats">
+              <span class="qz-badge">${m.answered}/${m.total} Çözüldü</span>
+              <span class="qz-badge ok">✓ ${m.correct}</span>
+              <span class="qz-badge bad">✕ ${m.wrong}</span>
+              <span class="qz-badge" id="qzClock">⏱ ${elapsedStr()}</span>
+            </div>
+            <div class="qz-controls">
+              <button type="button" class="qz-pill ${state.mode === 'single' ? 'on' : ''}" data-mode="single">Tek Tek</button>
+              <button type="button" class="qz-pill ${state.mode === 'list' ? 'on' : ''}" data-mode="list">Tüm Liste</button>
+              <button type="button" class="qz-pill" data-regen="5">Yeni 5 Soru</button>
+              <button type="button" class="qz-pill" data-regen="10">10 Soru</button>
+            </div>
+          </div>
+          <div class="qz-dots">${dotsHtml}</div>
+          ${bodyHtml}
+          ${finished ? `
+            <div class="qz-summary">
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+                <strong>Sınav Tamamlandı · Başarı: %${pct} (${elapsedStr()})</strong>
+                <span style="font-size:12.5px;opacity:.85">${m.correct} Doğru, ${m.wrong} Yanlış</span>
+              </div>
+              <div class="qz-summary-actions">
+                ${m.wrong > 0 ? `<button type="button" class="qz-pill on" id="qzRetryWrong">Yanlışları Tekrar Çöz (${m.wrong})</button>` : ''}
+                <button type="button" class="qz-pill" id="qzResetAll">Tümünü Sıfırla</button>
+                <button type="button" class="qz-pill" id="qzToWorksheet">Çalışma Yaprağı Olarak Deftere Ekle</button>
+                ${m.wrong > 0 ? `<button type="button" class="qz-pill" id="qzPinWrong">Yanlışları Tuvale Kart Yap</button>` : ''}
+              </div>
+            </div>
+          ` : `
+            <div style="display:flex;justify-content:flex-end;gap:8px">
+              <button type="button" class="qz-pill" id="qzToWorksheet">Çalışma Yaprağı Olarak Deftere Ekle</button>
+            </div>
+          `}
+        `;
+
+        ON.renderMath(mount);
+        mount.querySelectorAll('[data-scratch-cv]').forEach(cv => {
+          const qid = Number(cv.dataset.scratchCv);
+          bindScratchpad(cv, state.scratchData.get(qid), dataUrl => state.scratchData.set(qid, dataUrl));
+        });
+      };
+
+      const clockInterval = setInterval(() => {
+        if (!document.body.contains(mount)) { clearInterval(clockInterval); return; }
+        const el = $('qzClock');
+        if (el) el.textContent = '⏱ ' + elapsedStr();
+      }, 1000);
+
+      mount.onclick = async e => {
+        const optBtn = e.target.closest('.qz-opt');
+        if (optBtn) {
+          const qid = Number(optBtn.dataset.qid);
+          const oi = Number(optBtn.dataset.oi);
+          const q = state.questions.find(x => x.id === qid);
+          if (q && !state.results.has(qid)) {
+            state.results.set(qid, { correct: oi === q.answer, chosen: oi });
+            draw();
+          }
+          return;
+        }
+
+        const revealBtn = e.target.closest('[data-reveal-open]');
+        if (revealBtn) {
+          const qid = Number(revealBtn.dataset.revealOpen);
+          state.openRevealed.add(qid);
+          draw();
+          return;
+        }
+
+        const gradeBtn = e.target.closest('[data-grade-open]');
+        if (gradeBtn) {
+          const qid = Number(gradeBtn.dataset.gradeOpen);
+          const ok = gradeBtn.dataset.ok === '1';
+          const inp = mount.querySelector(`[data-open-in="${qid}"]`);
+          state.results.set(qid, { correct: ok, userText: inp ? inp.value : '' });
+          draw();
+          return;
+        }
+
+        const scratchBtn = e.target.closest('[data-scratch]');
+        if (scratchBtn) {
+          const qid = Number(scratchBtn.dataset.scratch);
+          if (state.scratchOpen.has(qid)) state.scratchOpen.delete(qid);
+          else state.scratchOpen.add(qid);
+          draw();
+          return;
+        }
+
+        const clearBtn = e.target.closest('[data-scratch-clear]');
+        if (clearBtn) {
+          const qid = Number(clearBtn.dataset.scratchClear);
+          state.scratchData.delete(qid);
+          state.scratchFeedback.delete(qid);
+          draw();
+          return;
+        }
+
+        const checkScratchBtn = e.target.closest('[data-scratch-check]');
+        if (checkScratchBtn) {
+          const qid = Number(checkScratchBtn.dataset.scratchCheck);
+          const dataUrl = state.scratchData.get(qid);
+          const q = state.questions.find(x => x.id === qid);
+          if (!dataUrl || !q) { ON.app.toast('Önce karalama alanına çözümünü yaz'); return; }
+          state.scratchFeedback.set(qid, 'S Pen çözümün kontrol ediliyor…');
+          draw();
+          const b64 = await exportScratchForVision(dataUrl);
+          if (!b64) return;
+          try {
+            const fb = await ON.gemini(ON.settings, [
+              { inline_data: { mime_type: 'image/jpeg', data: b64 } },
+              { text: `Soru: ${q.q}\nBeklenen Çözüm: ${q.explanation}\n\nÖğrencinin el yazısı karalama alanındaki adımlarını kontrol et. Hatalı adım varsa kısaca belirt, doğru yoldaysa onayla.` }
+            ]);
+            state.scratchFeedback.set(qid, fb.text);
+          } catch (err) {
+            state.scratchFeedback.set(qid, 'Kontrol edilemedi: ' + (err.message || err));
+          }
+          draw();
+          return;
+        }
+
+        const hintBtn = e.target.closest('[data-hint]');
+        if (hintBtn) {
+          const qid = Number(hintBtn.dataset.hint);
+          if (state.hintsOpen.has(qid)) state.hintsOpen.delete(qid);
+          else state.hintsOpen.add(qid);
+          draw();
+          return;
+        }
+
+        const jumpBtn = e.target.closest('[data-jump]');
+        if (jumpBtn) {
+          state.mode = 'single';
+          state.curIdx = Number(jumpBtn.dataset.jump);
+          draw();
+          return;
+        }
+
+        const navBtn = e.target.closest('[data-nav]');
+        if (navBtn) {
+          const dir = Number(navBtn.dataset.nav);
+          state.curIdx = Math.max(0, Math.min(state.questions.length - 1, state.curIdx + dir));
+          draw();
+          return;
+        }
+
+        const modeBtn = e.target.closest('[data-mode]');
+        if (modeBtn) {
+          state.mode = modeBtn.dataset.mode;
+          draw();
+          return;
+        }
+
+        const regenBtn = e.target.closest('[data-regen]');
+        if (regenBtn) {
+          clearInterval(clockInterval);
+          this.makeQuiz({ count: Number(regenBtn.dataset.regen) || 5 });
+          return;
+        }
+
+        if (e.target.closest('#qzRetryWrong')) {
+          const wrongQs = state.questions.filter(q => state.results.get(q.id)?.correct === false);
+          if (wrongQs.length) {
+            state.questions = wrongQs;
+            state.results.clear();
+            state.openRevealed.clear();
+            state.hintsOpen.clear();
+            state.curIdx = 0;
+            state.startedAt = Date.now();
+            draw();
+          }
+          return;
+        }
+
+        if (e.target.closest('#qzResetAll')) {
+          state.questions = allQuestions.slice();
+          state.results.clear();
+          state.openRevealed.clear();
+          state.hintsOpen.clear();
+          state.curIdx = 0;
+          state.startedAt = Date.now();
+          draw();
+          return;
+        }
+
+        if (e.target.closest('#qzToWorksheet')) {
+          ON.app.closeModal('studyDlg');
+          await ON.app.addSummaryPage(questionsToMarkdown(state.questions));
+          return;
+        }
+
+        if (e.target.closest('#qzPinWrong')) {
+          const wrongQs = state.questions.filter(q => state.results.get(q.id)?.correct === false);
+          if (wrongQs.length && ON.cards) {
+            ON.cards.create(questionsToMarkdown(wrongQs), ON.app.viewAnchor());
+            ON.app.closeModal('studyDlg');
+            ON.app.toast(`${wrongQs.length} yanlış soru tuvale kart olarak sabitlendi`);
+          }
+        }
+      };
+
+      draw();
     }
   }
   ON.StudyGuideBuilder = StudyGuideBuilder;
