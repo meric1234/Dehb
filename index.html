@@ -107,6 +107,7 @@
 <script defer src="canvas-tools.js"></script>
 <script defer src="pdf-engine.js"></script>
 <script defer src="ai-study.js"></script>
+<script defer src="quiz.js"></script>
 <script defer src="app.js"></script>
 <script defer src="focus-studio.js"></script>
 </head>
@@ -583,9 +584,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const cleanDomTree = root => {
     if (!root) return;
+    if (root.closest?.('#onQuizApp')) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
+      if (node.parentElement?.closest?.('#onQuizApp, .katex')) continue;
       if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times') || node.nodeValue.includes('\\cdot'))) {
         const cleaned = prettifyMathText(node.nodeValue);
         if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
