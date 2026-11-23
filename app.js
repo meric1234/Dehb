@@ -88,7 +88,7 @@
     history: null
   };
   let W = 0, H = 0, stageRect = { left: 0, top: 0 };
-  let penDown = false, penUpAt = 0, active = null, cur = null, gizmo = null, lasso = null, hoverPt = null;
+  let penDown = false, penUpAt = 0, penHoverErase = false, active = null, cur = null, gizmo = null, lasso = null, hoverPt = null;
   let laser = [], selectedObj = null, saving = false, metaDirty = false, saveTimer = 0;
   const dirtyPages = new Set();
   const assetURLs = new Map();
@@ -369,7 +369,7 @@
       liveX.restore();
       if (laser.length) requestLive();
     }
-    if (hoverPt && (tools.tool === 'eraser' || (active && active.type === 'erase'))) {
+    if (hoverPt && (tools.tool === 'eraser' || penHoverErase || (active && active.type === 'erase'))) {
       liveX.beginPath(); liveX.arc(hoverPt.x, hoverPt.y, eraserRadius(), 0, Math.PI * 2);
       liveX.lineWidth = 1.2 / z; liveX.strokeStyle = dark ? 'rgba(242,239,251,.7)' : 'rgba(27,24,48,.6)'; liveX.stroke();
     }
@@ -626,6 +626,8 @@
 
   /* ================= Giriş: S Pen, dokunma, fare ================= */
   const penBusy = () => penDown || now() - penUpAt < 150;
+  const isPenSideBtn = e => e.pointerType === 'pen' && Boolean((e.buttons & 32) || (e.buttons & 2) || e.button === 5);
+  const isPenSideHeld = e => e.pointerType === 'pen' && Boolean((e.buttons & 32) || (e.buttons & 2));
   const gesture = new ON.TouchGestureRecognizer({
     isPenBusy: penBusy,
     onTransform(dx, dy, scale, cx, cy) {
@@ -645,11 +647,18 @@
   const DRAW_TOOLS = new Set(['pen', 'highlighter', 'eraser', 'lasso', 'laser']);
   let fingerStroke = null;
 
+  stage.addEventListener('pointerenter', () => { stageRect = stage.getBoundingClientRect(); });
   stage.addEventListener('pointerdown', onDown, true);
   stage.addEventListener('pointermove', onMove, true);
   stage.addEventListener('pointerup', onUp, true);
   stage.addEventListener('pointercancel', onUp, true);
-  stage.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !active) { hoverPt = null; requestLive(); } });
+  stage.addEventListener('pointerleave', e => {
+    if (e.pointerType !== 'touch' && !active) {
+      if (penHoverErase) { penHoverErase = false; setToolBadge(null); }
+      hoverPt = null;
+      requestLive();
+    }
+  });
   stage.addEventListener('contextmenu', e => { if (!e.target.closest('.snote-b, #out, input, textarea, [contenteditable="true"]')) e.preventDefault(); });
 
   function onDown(e) {
@@ -657,6 +666,7 @@
     const ui = e.target.closest('[data-ui]');
     if (ui && !e.target.closest('#world')) return;
     hidePop(); if ($('timerPop')) $('timerPop').hidden = true;
+    stageRect = stage.getBoundingClientRect();
     const pt = app.screenToWorld(e.clientX, e.clientY);
 
     if (gizmo) {
@@ -705,12 +715,25 @@
     const objEl = e.target.closest('.obj');
     if (objEl && (tool === 'lasso' || tool === 'text')) { objectPointerDown(e, objEl); return; }
     if (objEl && objEl.isContentEditable) return;
-    const sideBtn = e.pointerType === 'pen' && ((e.buttons & 32) || e.button === 5 || (e.buttons & 2));
+    const sideBtn = isPenSideBtn(e);
     const rightMouse = e.pointerType === 'mouse' && e.button === 2;
     e.preventDefault();
     const wasEditing = document.activeElement && document.activeElement.isContentEditable;
     if (wasEditing) document.activeElement.blur();
     if (wasEditing && tool === 'text') return;
+
+    // S Pen henüz cama değmeden (hover) yan tuşa basıldıysa erken yakalama kilidi açma;
+    // imleç halkasını gerçek zamanlı takip ettir, uç değdiği anda silmeyi başlat.
+    if (e.pointerType === 'pen' && e.pressure === 0 && sideBtn) {
+      penDown = false;
+      penHoverErase = true;
+      hoverPt = pt;
+      setToolBadge('eraser');
+      requestLive();
+      return;
+    }
+
+    penHoverErase = false;
     startTool(e, pt, sideBtn || rightMouse ? 'eraser' : tool, false, sideBtn);
   }
 
@@ -752,16 +775,44 @@
       else { gesture.move(e); return; }
     }
     if (tools.tool === 'textsel' && penSel) { penSelectMove(e); return; }
+
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    const lastEv = evs[evs.length - 1] || e;
+    const pt = app.screenToWorld(lastEv.clientX, lastEv.clientY);
+
     if (!active) {
-      if (tools.tool === 'eraser' && e.pointerType !== 'touch') { hoverPt = app.screenToWorld(e.clientX, e.clientY); requestLive(); }
+      if (e.pointerType === 'pen') {
+        const held = isPenSideHeld(e);
+        if (held) {
+          if (e.pressure > 0) {
+            penHoverErase = false;
+            penDown = true;
+            gesture.cancelAll();
+            startTool(e, pt, 'eraser', false, true);
+            return;
+          }
+          penHoverErase = true;
+          hoverPt = pt;
+          setToolBadge('eraser');
+          requestLive();
+          return;
+        }
+        if (penHoverErase) {
+          penHoverErase = false;
+          hoverPt = tools.tool === 'eraser' ? pt : null;
+          setToolBadge(null);
+          requestLive();
+          return;
+        }
+      }
+      if (tools.tool === 'eraser' && e.pointerType !== 'touch') { hoverPt = pt; requestLive(); }
       return;
     }
+
     if (e.pointerId !== active.id) return;
-    const pt = app.screenToWorld(e.clientX, e.clientY);
     switch (active.type) {
       case 'stroke': addPoints(e); break;
       case 'erase': {
-        const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
         for (const ev of evs) { const p = app.screenToWorld(ev.clientX, ev.clientY); eraseSweep(active.last, p); active.last = p; }
         hoverPt = pt; requestLive();
         break;
@@ -780,7 +831,16 @@
   }
 
   function onUp(e) {
-    if (e.pointerType === 'pen') { penDown = false; penUpAt = now(); }
+    if (e.pointerType === 'pen') {
+      penDown = false;
+      penUpAt = now();
+      if (penHoverErase) {
+        penHoverErase = false;
+        hoverPt = null;
+        setToolBadge(null);
+        requestLive();
+      }
+    }
     if (tools.tool === 'textsel' && penSel && e.pointerType === 'pen') { penSel = null; return; }
     if (e.pointerType === 'touch' && !(active && active.id === e.pointerId)) { gesture.up(e); return; }
     if (!active || e.pointerId !== active.id) return;
@@ -1208,7 +1268,7 @@
     stage.dataset.cursor = t === 'eraser' ? 'eraser' : t === 'text' ? 'text' : t === 'lasso' ? 'lasso' : t === 'textsel' ? '' : 'pen';
     if (app.virt) app.virt.setTextMode(t === 'textsel');
     if (t !== 'textsel') hideSelMenu();
-    if (t !== 'eraser') { hoverPt = null; requestLive(); }
+    if (t !== 'eraser' && !penHoverErase) { hoverPt = null; requestLive(); }
     if (t === 'textsel' && app.nb && !app.nb.pdfHash) app.toast('Metin seçimi PDF sayfalarında çalışır');
     refreshPalette();
   }
