@@ -110,6 +110,7 @@
 <script defer src="quiz.js"></script>
 <script defer src="app.js"></script>
 <script defer src="focus-studio.js"></script>
+<script defer src="graph.js"></script>
 </head>
 <body>
 <div id="app">
@@ -584,11 +585,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const cleanDomTree = root => {
     if (!root) return;
-    if (root.closest?.('#onQuizApp')) return;
+    if (root.closest?.('#onQuizApp, #onGraphWin')) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest?.('#onQuizApp, .katex')) continue;
+      if (node.parentElement?.closest?.('#onQuizApp, #onGraphWin, .katex')) continue;
       if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times') || node.nodeValue.includes('\\cdot'))) {
         const cleaned = prettifyMathText(node.nodeValue);
         if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
