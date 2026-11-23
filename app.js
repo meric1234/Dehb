@@ -116,8 +116,8 @@
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
   /* ================= Açılır pencereler ================= */
-  app.openModal = id => { $(id).classList.add('on'); };
-  app.closeModal = id => { $(id).classList.remove('on'); };
+  app.openModal = id => { $(id)?.classList.add('on'); };
+  app.closeModal = id => { $(id)?.classList.remove('on'); };
   document.querySelectorAll('.modal').forEach(m => {
     m.addEventListener('click', e => { if (e.target === m || e.target.closest('[data-close]')) { e.preventDefault(); m.classList.remove('on'); } });
   });
@@ -130,7 +130,7 @@
   app.closePanelsExcept = (keep) => {
     if (keep !== 'ai') ON.AI && ON.AI.close();
     if (keep !== 'pop') hidePop();
-    if (keep !== 'timer') $('timerPop').hidden = true;
+    if (keep !== 'timer' && $('timerPop')) $('timerPop').hidden = true;
     if (keep === 'ai' && matchMedia('(max-width:820px)').matches) $('app').classList.add('side-closed');
   };
 
@@ -656,7 +656,7 @@
     if (!app.nb) return;
     const ui = e.target.closest('[data-ui]');
     if (ui && !e.target.closest('#world')) return;
-    hidePop(); $('timerPop').hidden = true;
+    hidePop(); if ($('timerPop')) $('timerPop').hidden = true;
     const pt = app.screenToWorld(e.clientX, e.clientY);
 
     if (gizmo) {
@@ -1703,27 +1703,29 @@
   };
 
   function renderTimer() {
-    const btn = $('timerBtn'), bar = $('timerBar').firstElementChild;
+    const btn = $('timerBtn'), bar = $('timerBar')?.firstElementChild;
+    if (!btn) return;
     btn.classList.remove('done');
+    const txtEl = $('timerTxt');
     if (!timer) {
-      $('timerTxt').textContent = '';
-      bar.style.width = '0';
+      if (txtEl) txtEl.textContent = '';
+      if (bar) bar.style.width = '0';
       const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = timerTab === 'sw' ? '00:00' : '25:00';
       return;
     }
     if (timer.kind === 'sw') {
       const elapsed = timer.paused ? timer.elapsed : (timer.elapsed + (Date.now() - timer.started));
       const txt = fmtClock(elapsed);
-      $('timerTxt').textContent = txt;
-      bar.style.width = ((elapsed % 3600000) / 36000).toFixed(1) + '%';
+      if (txtEl) txtEl.textContent = txt;
+      if (bar) bar.style.width = ((elapsed % 3600000) / 36000).toFixed(1) + '%';
       const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = txt;
       return;
     }
     const left = timer.paused ? timer.rem : (timer.end - Date.now());
     if (left <= 0) {
-      $('timerTxt').textContent = 'Mola';
+      if (txtEl) txtEl.textContent = 'Mola';
       btn.classList.add('done');
-      bar.style.width = '100%';
+      if (bar) bar.style.width = '100%';
       const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = '00:00';
       if (chimedFor !== timer.end) {
         chimedFor = timer.end;
@@ -1733,8 +1735,8 @@
       return;
     }
     const txt = fmtClock(left);
-    $('timerTxt').textContent = txt;
-    bar.style.width = (100 * (1 - left / (timer.total * 60000))).toFixed(1) + '%';
+    if (txtEl) txtEl.textContent = txt;
+    if (bar) bar.style.width = (100 * (1 - left / (timer.total * 60000))).toFixed(1) + '%';
     const liveEl = $('tmLive'); if (liveEl) liveEl.textContent = txt;
   }
 
