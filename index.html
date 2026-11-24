@@ -25,20 +25,8 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <link rel="stylesheet" href="style.css">
-<link rel="stylesheet" href="focus-studio.css">
 
 <style>
-  #timerBar,
-  .fs-dock,
-  .fs-mini,
-  .fs-float,
-  .fs-sound-sec,
-  .on-hide-unwanted {
-    display: none !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -109,7 +97,6 @@
 <script defer src="ai-study.js"></script>
 <script defer src="quiz.js"></script>
 <script defer src="app.js"></script>
-<script defer src="focus-studio.js"></script>
 <script defer src="graph.js"></script>
 </head>
 <body>
@@ -424,30 +411,30 @@ function prettifyMathText(raw) {
 
   const convertExpr = expr => {
     let t = String(expr || '').trim();
-    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
-    t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
-    t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
-    t = t.replace(/\\left|\\right/g, '');
-    t = t.replace(/\\times|\\cdot/g, '×');
-    t = t.replace(/\\div/g, '÷');
-    t = t.replace(/\\pm/g, '±');
-    t = t.replace(/\\mp/g, '∓');
-    t = t.replace(/\\approx/g, '≈');
-    t = t.replace(/\\neq|\\ne/g, '≠');
-    t = t.replace(/\\leq|\\le/g, '≤');
-    t = t.replace(/\\geq|\\ge/g, '≥');
-    t = t.replace(/\\rightarrow|\\to/g, '→');
-    t = t.replace(/\\Rightarrow/g, '⇒');
-    t = t.replace(/\\infty/g, '∞');
-    t = t.replace(/\\sum/g, '∑');
-    t = t.replace(/\\int/g, '∫');
-    t = t.replace(/\\prod/g, '∏');
-    t = t.replace(/\\partial/g, '∂');
-    t = t.replace(/\\nabla/g, '∇');
-    t = t.replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\gamma/g, 'γ').replace(/\\delta/g, 'δ');
-    t = t.replace(/\\Delta/g, 'Δ').replace(/\\Theta/g, 'Θ').replace(/\\theta/g, 'θ').replace(/\\lambda/g, 'λ');
-    t = t.replace(/\\mu/g, 'μ').replace(/\\pi/g, 'π').replace(/\\rho/g, 'ρ').replace(/\\sigma/g, 'σ').replace(/\\Sigma/g, 'Σ');
-    t = t.replace(/\\tau/g, 'τ').replace(/\\phi/g, 'φ').replace(/\\Phi/g, 'Φ').replace(/\\omega/g, 'ω').replace(/\\Omega/g, 'Ω');
+    t = t.replace(/\text\{([^}]*)\}|\mathrm\{([^}]*)\}|\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
+    t = t.replace(/\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+    t = t.replace(/\sqrt\{([^{}]+)\}/g, '√($1)');
+    t = t.replace(/\left|\right/g, '');
+    t = t.replace(/\times|\cdot/g, '×');
+    t = t.replace(/\div/g, '÷');
+    t = t.replace(/\pm/g, '±');
+    t = t.replace(/\mp/g, '∓');
+    t = t.replace(/\approx/g, '≈');
+    t = t.replace(/\neq|\ne/g, '≠');
+    t = t.replace(/\leq|\le/g, '≤');
+    t = t.replace(/\geq|\ge/g, '≥');
+    t = t.replace(/\rightarrow|\to/g, '→');
+    t = t.replace(/\Rightarrow/g, '⇒');
+    t = t.replace(/\infty/g, '∞');
+    t = t.replace(/\sum/g, '∑');
+    t = t.replace(/\int/g, '∫');
+    t = t.replace(/\prod/g, '∏');
+    t = t.replace(/\partial/g, '∂');
+    t = t.replace(/\nabla/g, '∇');
+    t = t.replace(/\alpha/g, 'α').replace(/\beta/g, 'β').replace(/\gamma/g, 'γ').replace(/\delta/g, 'δ');
+    t = t.replace(/\Delta/g, 'Δ').replace(/\Theta/g, 'Θ').replace(/\theta/g, 'θ').replace(/\lambda/g, 'λ');
+    t = t.replace(/\mu/g, 'μ').replace(/\pi/g, 'π').replace(/\rho/g, 'ρ').replace(/\sigma/g, 'σ').replace(/\Sigma/g, 'Σ');
+    t = t.replace(/\tau/g, 'τ').replace(/\phi/g, 'φ').replace(/\Phi/g, 'Φ').replace(/\omega/g, 'ω').replace(/\Omega/g, 'Ω');
     t = t.replace(/\^\{([^{}]+)\}/g, (_, g) => toSup(g));
     t = t.replace(/\^([0-9a-zA-Z+-])/g, (_, g) => toSup(g));
     t = t.replace(/_\{([^{}]+)\}/g, (_, g) => toSub(g));
@@ -457,46 +444,19 @@ function prettifyMathText(raw) {
   };
 
   let out = raw;
-  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
-  out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
-  return out.replace(/\n{3,}/g, '\n\n').trim();
+  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '
+' + convertExpr(inner) + '
+');
+  out = out.replace(/(?<!\$)\$(?!\$)([^$
+]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
+  return out.replace(/
+{3,}/g, '
+
+').trim();
 }
 window.prettifyMathText = prettifyMathText;
 
 document.addEventListener('DOMContentLoaded', () => {
-  const cleanExtraTimerUI = () => {
-    const timerPop = document.getElementById('timerPop');
-    if (timerPop) {
-      timerPop.querySelectorAll('*').forEach(el => {
-        const txt = (el.textContent || '').trim();
-        if (txt.startsWith('Odak Sesi')) {
-          el.classList.add('on-hide-unwanted');
-          let sib = el.nextElementSibling;
-          while (sib) {
-            sib.classList.add('on-hide-unwanted');
-            sib = sib.nextElementSibling;
-          }
-        }
-      });
-    }
-
-    document.querySelectorAll('#stage > div, body > div, #main > div').forEach(el => {
-      if (el.id === 'tools' || el.id === 'timerPop' || el.id === 'mp3Pop' || el.id === 'ai' || el.id === 'gizmoBar' || el.id === 'selMenu') return;
-      if (el.closest && el.closest('#tools, #timerPop, #mp3Pop, #ai, #side, #top')) return;
-      const txt = (el.textContent || '');
-      if (txt.includes('Kronometre') && txt.includes('Sıfırla') && (txt.includes('Ses:') || txt.includes('-5d') || txt.includes('+5d'))) {
-        el.classList.add('on-hide-unwanted');
-      }
-    });
-  };
-
-  cleanExtraTimerUI();
-  setTimeout(cleanExtraTimerUI, 150);
-  setTimeout(cleanExtraTimerUI, 600);
-  if (document.body) {
-    new MutationObserver(() => cleanExtraTimerUI()).observe(document.body, { childList: true, subtree: true });
-  }
-
   const appNs = window.ON || (window.ON = {});
 
   const isTextEditable = el => {
@@ -523,7 +483,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const range = sel.getRangeAt(0);
         if (ed.contains(range.commonAncestorContainer)) {
           range.deleteContents();
-          const lines = text.split('\n');
+          const lines = text.split('
+');
           const frag = document.createDocumentFragment();
           lines.forEach((line, i) => {
             if (i > 0) frag.appendChild(document.createElement('br'));
@@ -577,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let node;
     while ((node = walker.nextNode())) {
       if (node.parentElement?.closest?.('#onQuizApp, #onGraphWin, #onFcModal, .katex')) continue;
-      if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times') || node.nodeValue.includes('\\cdot'))) {
+      if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\frac') || node.nodeValue.includes('\times') || node.nodeValue.includes('\cdot'))) {
         const cleaned = prettifyMathText(node.nodeValue);
         if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
       }
@@ -2224,7 +2185,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const askGeminiVision = async (base64Png, promptText) => {
     const key = getApiKey();
     if (!key) {
-      toast('Önce Ayarlar\'dan Gemini API anahtarını gir');
+      toast('Önce Ayarlar'dan Gemini API anahtarını gir');
       document.getElementById('openSettings')?.click();
       return null;
     }
@@ -2356,7 +2317,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const siPart = parts[1] ? (window.prettifyMathText ? window.prettifyMathText(parts[1].trim()) : parts[1].trim()) : '';
         spawnSolutionCard({
           title: '🧮 Adım Adım Çözüm',
-          htmlBody: pretty.replace(/\n/g, '<br>'),
+          htmlBody: pretty.replace(/
+/g, '<br>'),
           siText: siPart
         });
         toast('Çözüm ve SI birim kartı eklendi');
@@ -2425,7 +2387,8 @@ document.addEventListener('DOMContentLoaded', () => {
           e.stopPropagation();
           spawnSolutionCard({
             title: `🗂️ ${fc.term}`,
-            htmlBody: fc.def.replace(/\n/g, '<br>')
+            htmlBody: fc.def.replace(/
+/g, '<br>')
           });
           document.getElementById('studyDlg')?.classList.remove('open');
           toast('Terim kartı tuvale sabitlendi');
@@ -2482,7 +2445,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(d => {
               const out = d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
               if (out) {
-                const lines = out.split('\n').filter(Boolean);
+                const lines = out.split('
+').filter(Boolean);
                 entry.def = lines[0] || out;
                 entry.extra = lines.slice(1).join(' ');
                 saveFlashcards();
@@ -2694,3 +2658,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.addEventListener('load', initProTools);
 })();
+</script>
+</body>
+</html>
+
