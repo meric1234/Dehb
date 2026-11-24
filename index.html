@@ -111,6 +111,7 @@
 <script defer src="app.js"></script>
 <script defer src="focus-studio.js"></script>
 <script defer src="graph.js"></script>
+<script defer src="pro-tools.js"></script>
 </head>
 <body>
 <div id="app">
@@ -318,8 +319,7 @@
       </div>
     </div>
     <select id="modelIn">
-      <option value="gemini-3.8-flash">gemini-3.8-flash (önerilen)</option>
-      <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+      <option value="gemini-2.5-flash">gemini-2.5-flash (önerilen)</option>
       <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (hızlı, yüksek kota)</option>
       <option value="gemini-flash-latest">gemini-flash-latest (her zaman en yeni)</option>
     </select>
@@ -410,23 +410,11 @@
 <input type="file" id="restoreIn" accept=".odaknot,application/octet-stream" hidden>
 
 <script>
-(function clearStaleCacheOnce() {
-  try {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(regs => {
-        let hadSw = false;
-        regs.forEach(r => { hadSw = true; r.unregister().catch(() => {}); });
-        if (hadSw && !sessionStorage.getItem('on-sw-cleared')) {
-          sessionStorage.setItem('on-sw-cleared', '1');
-          location.reload();
-        }
-      }).catch(() => {});
-    }
-    if ('caches' in window) {
-      caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(() => {});
-    }
-  } catch {}
-})();
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
 
 function prettifyMathText(raw) {
   if (!raw || typeof raw !== 'string') return raw || '';
@@ -585,11 +573,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const cleanDomTree = root => {
     if (!root) return;
-    if (root.closest?.('#onQuizApp, #onGraphWin')) return;
+    if (root.closest?.('#onQuizApp, #onGraphWin, #onFcModal')) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     let node;
     while ((node = walker.nextNode())) {
-      if (node.parentElement?.closest?.('#onQuizApp, #onGraphWin, .katex')) continue;
+      if (node.parentElement?.closest?.('#onQuizApp, #onGraphWin, #onFcModal, .katex')) continue;
       if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times') || node.nodeValue.includes('\\cdot'))) {
         const cleaned = prettifyMathText(node.nodeValue);
         if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
