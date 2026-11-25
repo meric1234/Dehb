@@ -50,6 +50,34 @@
   #top .pt-top-btn {
     padding: 5px 6px;
   }
+  #top #saved {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    font-size: 0 !important;
+    line-height: 0;
+    color: transparent !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    position: relative;
+  }
+  #top #saved::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    opacity: 0.75;
+    transition: background 0.2s ease, transform 0.2s ease;
+  }
+  #top #saved[data-state*="sav"],
+  #top #saved[class*="sav"]::after {
+    background: #60a5fa;
+    transform: scale(1.15);
+  }
 
   #tools,
   #tools .tgroup {
@@ -461,30 +489,30 @@ function prettifyMathText(raw) {
 
   const convertExpr = expr => {
     let t = String(expr || '').trim();
-    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
-    t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
-    t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
-    t = t.replace(/\\left|\\right/g, '');
-    t = t.replace(/\\times|\\cdot/g, '×');
-    t = t.replace(/\\div/g, '÷');
-    t = t.replace(/\\pm/g, '±');
-    t = t.replace(/\\mp/g, '∓');
-    t = t.replace(/\\approx/g, '≈');
-    t = t.replace(/\\neq|\\ne/g, '≠');
-    t = t.replace(/\\leq|\\le/g, '≤');
-    t = t.replace(/\\geq|\\ge/g, '≥');
-    t = t.replace(/\\rightarrow|\\to/g, '→');
-    t = t.replace(/\\Rightarrow/g, '⇒');
-    t = t.replace(/\\infty/g, '∞');
-    t = t.replace(/\\sum/g, '∑');
-    t = t.replace(/\\int/g, '∫');
-    t = t.replace(/\\prod/g, '∏');
-    t = t.replace(/\\partial/g, '∂');
-    t = t.replace(/\\nabla/g, '∇');
-    t = t.replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\gamma/g, 'γ').replace(/\\delta/g, 'δ');
-    t = t.replace(/\\Delta/g, 'Δ').replace(/\\Theta/g, 'Θ').replace(/\\theta/g, 'θ').replace(/\\lambda/g, 'λ');
-    t = t.replace(/\\mu/g, 'μ').replace(/\\pi/g, 'π').replace(/\\rho/g, 'ρ').replace(/\\sigma/g, 'σ').replace(/\\Sigma/g, 'Σ');
-    t = t.replace(/\\tau/g, 'τ').replace(/\\phi/g, 'φ').replace(/\\Phi/g, 'Φ').replace(/\\omega/g, 'ω').replace(/\\Omega/g, 'Ω');
+    t = t.replace(/\text\{([^}]*)\}|\mathrm\{([^}]*)\}|\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
+    t = t.replace(/\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+    t = t.replace(/\sqrt\{([^{}]+)\}/g, '√($1)');
+    t = t.replace(/\left|\right/g, '');
+    t = t.replace(/\times|\cdot/g, '×');
+    t = t.replace(/\div/g, '÷');
+    t = t.replace(/\pm/g, '±');
+    t = t.replace(/\mp/g, '∓');
+    t = t.replace(/\approx/g, '≈');
+    t = t.replace(/\neq|\ne/g, '≠');
+    t = t.replace(/\leq|\le/g, '≤');
+    t = t.replace(/\geq|\ge/g, '≥');
+    t = t.replace(/\rightarrow|\to/g, '→');
+    t = t.replace(/\Rightarrow/g, '⇒');
+    t = t.replace(/\infty/g, '∞');
+    t = t.replace(/\sum/g, '∑');
+    t = t.replace(/\int/g, '∫');
+    t = t.replace(/\prod/g, '∏');
+    t = t.replace(/\partial/g, '∂');
+    t = t.replace(/\nabla/g, '∇');
+    t = t.replace(/\alpha/g, 'α').replace(/\beta/g, 'β').replace(/\gamma/g, 'γ').replace(/\delta/g, 'δ');
+    t = t.replace(/\Delta/g, 'Δ').replace(/\Theta/g, 'Θ').replace(/\theta/g, 'θ').replace(/\lambda/g, 'λ');
+    t = t.replace(/\mu/g, 'μ').replace(/\pi/g, 'π').replace(/\rho/g, 'ρ').replace(/\sigma/g, 'σ').replace(/\Sigma/g, 'Σ');
+    t = t.replace(/\tau/g, 'τ').replace(/\phi/g, 'φ').replace(/\Phi/g, 'Φ').replace(/\omega/g, 'ω').replace(/\Omega/g, 'Ω');
     t = t.replace(/\^\{([^{}]+)\}/g, (_, g) => toSup(g));
     t = t.replace(/\^([0-9a-zA-Z+-])/g, (_, g) => toSup(g));
     t = t.replace(/_\{([^{}]+)\}/g, (_, g) => toSub(g));
@@ -495,7 +523,7 @@ function prettifyMathText(raw) {
 
   let out = raw;
   out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
-  out = out.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
+  out = out.replace(/(?<!\$)(?!\$)([^\n$]+?)(?<!\$)(?!\$)/g, (_, inner) => convertExpr(inner));
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 window.prettifyMathText = prettifyMathText;
@@ -591,6 +619,17 @@ document.addEventListener('DOMContentLoaded', () => {
       root.querySelectorAll?.('input, textarea, [contenteditable]').forEach(bindEditableElement);
     }
   };
+
+  const savedEl = document.getElementById('saved');
+  if (savedEl) {
+    const syncSavedState = () => {
+      const t = (savedEl.textContent || '').trim();
+      if (t) savedEl.setAttribute('title', t);
+      savedEl.dataset.state = t.toLowerCase();
+    };
+    syncSavedState();
+    new MutationObserver(syncSavedState).observe(savedEl, { childList: true, characterData: true, subtree: true });
+  }
 
   if (document.body) {
     new MutationObserver(muts => {
