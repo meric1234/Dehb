@@ -27,84 +27,6 @@
 <link rel="stylesheet" href="style.css">
 
 <style>
-  /* Üst çubuk (#top) ve alt araç çubuğu (#tools) yatay kaydırma ve kompakt boşluklar */
-  #top {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  #top::-webkit-scrollbar { display: none; }
-  #top > * { flex: 0 0 auto; }
-  #top #title {
-    flex: 1 1 110px;
-    min-width: 90px;
-    max-width: 240px;
-  }
-  #top .ico,
-  #top .pt-top-btn {
-    padding: 5px 6px;
-  }
-  #top #saved {
-    flex: 0 0 auto;
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    font-size: 0 !important;
-    line-height: 0;
-    color: transparent !important;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    position: relative;
-  }
-  #top #saved::after {
-    content: "";
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #22c55e;
-    opacity: 0.75;
-    transition: background 0.2s ease, transform 0.2s ease;
-  }
-  #top #saved[data-state*="sav"],
-  #top #saved[class*="sav"]::after {
-    background: #60a5fa;
-    transform: scale(1.15);
-  }
-
-  #tools,
-  #tools .tgroup {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 4px;
-  }
-  #tools {
-    max-width: calc(100% - 16px);
-    padding: 5px 8px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  #tools::-webkit-scrollbar { display: none; }
-  #tools > *,
-  #tools .tgroup > * {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-  #tools .sep {
-    flex: 0 0 1px;
-    margin: 0 2px;
-  }
-
   #mp3Btn { position: relative; gap: 4px; width: auto; padding: 0 8px; }
   #mp3Btn.playing { color: #60a5fa; background: rgba(96, 165, 250, 0.14); }
   #mp3Name { font-size: 11px; font-weight: 600; max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -255,7 +177,12 @@
         <button id="gzColor" title="Seçili çizgileri mevcut renge boya"><i class="dot" id="gzDot"></i>Renk</button>
         <button id="gzDup" data-icon="copy" title="Çoğalt"></button>
         <button id="gzDel" data-icon="trash" title="Sil"></button>
-        <button id="gzAi" class="acc"><span data-icon="sparkle"></span>Gemini'ye gönder</button>
+        <span class="sep"></span>
+        <button class="gz-quick acc" data-gz-ai="katex" title="El yazısını temiz KaTeX formülüne çevir">∑ KaTeX</button>
+        <button class="gz-quick" data-gz-ai="steps" title="Soruyu adım adım çöz ve tuvale sabitle">✦ Çöz</button>
+        <button class="gz-quick" data-gz-ai="card" title="Özet kartı oluştur ve Çalışma Rehberine ekle">⧉ Özet</button>
+        <button class="gz-quick" data-gz-ai="quiz" title="Benzer pratik soru üret">↻ Soru</button>
+        <button id="gzAi" data-icon="sparkle" title="Asistan panelinde aç"></button>
       </div>
 
       <div id="selMenu" class="floatbar" data-ui hidden>
@@ -489,30 +416,30 @@ function prettifyMathText(raw) {
 
   const convertExpr = expr => {
     let t = String(expr || '').trim();
-    t = t.replace(/\text\{([^}]*)\}|\mathrm\{([^}]*)\}|\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
-    t = t.replace(/\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
-    t = t.replace(/\sqrt\{([^{}]+)\}/g, '√($1)');
-    t = t.replace(/\left|\right/g, '');
-    t = t.replace(/\times|\cdot/g, '×');
-    t = t.replace(/\div/g, '÷');
-    t = t.replace(/\pm/g, '±');
-    t = t.replace(/\mp/g, '∓');
-    t = t.replace(/\approx/g, '≈');
-    t = t.replace(/\neq|\ne/g, '≠');
-    t = t.replace(/\leq|\le/g, '≤');
-    t = t.replace(/\geq|\ge/g, '≥');
-    t = t.replace(/\rightarrow|\to/g, '→');
-    t = t.replace(/\Rightarrow/g, '⇒');
-    t = t.replace(/\infty/g, '∞');
-    t = t.replace(/\sum/g, '∑');
-    t = t.replace(/\int/g, '∫');
-    t = t.replace(/\prod/g, '∏');
-    t = t.replace(/\partial/g, '∂');
-    t = t.replace(/\nabla/g, '∇');
-    t = t.replace(/\alpha/g, 'α').replace(/\beta/g, 'β').replace(/\gamma/g, 'γ').replace(/\delta/g, 'δ');
-    t = t.replace(/\Delta/g, 'Δ').replace(/\Theta/g, 'Θ').replace(/\theta/g, 'θ').replace(/\lambda/g, 'λ');
-    t = t.replace(/\mu/g, 'μ').replace(/\pi/g, 'π').replace(/\rho/g, 'ρ').replace(/\sigma/g, 'σ').replace(/\Sigma/g, 'Σ');
-    t = t.replace(/\tau/g, 'τ').replace(/\phi/g, 'φ').replace(/\Phi/g, 'Φ').replace(/\omega/g, 'ω').replace(/\Omega/g, 'Ω');
+    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
+    t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+    t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
+    t = t.replace(/\\left|\\right/g, '');
+    t = t.replace(/\\times|\\cdot/g, '×');
+    t = t.replace(/\\div/g, '÷');
+    t = t.replace(/\\pm/g, '±');
+    t = t.replace(/\\mp/g, '∓');
+    t = t.replace(/\\approx/g, '≈');
+    t = t.replace(/\\neq|\\ne/g, '≠');
+    t = t.replace(/\\leq|\\le/g, '≤');
+    t = t.replace(/\\geq|\\ge/g, '≥');
+    t = t.replace(/\\rightarrow|\\to/g, '→');
+    t = t.replace(/\\Rightarrow/g, '⇒');
+    t = t.replace(/\\infty/g, '∞');
+    t = t.replace(/\\sum/g, '∑');
+    t = t.replace(/\\int/g, '∫');
+    t = t.replace(/\\prod/g, '∏');
+    t = t.replace(/\\partial/g, '∂');
+    t = t.replace(/\\nabla/g, '∇');
+    t = t.replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\gamma/g, 'γ').replace(/\\delta/g, 'δ');
+    t = t.replace(/\\Delta/g, 'Δ').replace(/\\Theta/g, 'Θ').replace(/\\theta/g, 'θ').replace(/\\lambda/g, 'λ');
+    t = t.replace(/\\mu/g, 'μ').replace(/\\pi/g, 'π').replace(/\\rho/g, 'ρ').replace(/\\sigma/g, 'σ').replace(/\\Sigma/g, 'Σ');
+    t = t.replace(/\\tau/g, 'τ').replace(/\\phi/g, 'φ').replace(/\\Phi/g, 'Φ').replace(/\\omega/g, 'ω').replace(/\\Omega/g, 'Ω');
     t = t.replace(/\^\{([^{}]+)\}/g, (_, g) => toSup(g));
     t = t.replace(/\^([0-9a-zA-Z+-])/g, (_, g) => toSup(g));
     t = t.replace(/_\{([^{}]+)\}/g, (_, g) => toSub(g));
@@ -523,7 +450,7 @@ function prettifyMathText(raw) {
 
   let out = raw;
   out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
-  out = out.replace(/(?<!\$)(?!\$)([^\n$]+?)(?<!\$)(?!\$)/g, (_, inner) => convertExpr(inner));
+  out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 window.prettifyMathText = prettifyMathText;
@@ -619,17 +546,6 @@ document.addEventListener('DOMContentLoaded', () => {
       root.querySelectorAll?.('input, textarea, [contenteditable]').forEach(bindEditableElement);
     }
   };
-
-  const savedEl = document.getElementById('saved');
-  if (savedEl) {
-    const syncSavedState = () => {
-      const t = (savedEl.textContent || '').trim();
-      if (t) savedEl.setAttribute('title', t);
-      savedEl.dataset.state = t.toLowerCase();
-    };
-    syncSavedState();
-    new MutationObserver(syncSavedState).observe(savedEl, { childList: true, characterData: true, subtree: true });
-  }
 
   if (document.body) {
     new MutationObserver(muts => {
@@ -2267,7 +2183,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const askGeminiVision = async (base64Png, promptText) => {
     const key = getApiKey();
     if (!key) {
-      toast("Önce Ayarlar'dan Gemini API anahtarını gir");
+      toast('Önce Ayarlar\'dan Gemini API anahtarını gir');
       document.getElementById('openSettings')?.click();
       return null;
     }
@@ -2341,98 +2257,6 @@ document.addEventListener('DOMContentLoaded', () => {
         plotBtn?.click();
       }
     }, 120);
-  };
-
-  const enhanceGizmoBar = () => {
-    const gz = document.getElementById('gizmoBar');
-    if (!gz || gz.dataset.ptEnhanced === '1') return;
-    gz.dataset.ptEnhanced = '1';
-
-    const makeBtn = (label, title, fn) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.title = title;
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        fn();
-      });
-      gz.appendChild(b);
-    };
-
-    makeBtn('∑ KaTeX', 'El yazısı denklemi KaTeX kartına çevir', async () => {
-      const rect = getLassoStageRect();
-      const img = captureStageImage(rect);
-      if (!img) return;
-      toast('Denklem okunuyor...');
-      try {
-        const latex = await askGeminiVision(
-          img,
-          'Görseldeki el yazısı matematik veya mühendislik denklemini yalnızca saf LaTeX formatında yaz. Açıklama ekleme, sadece LaTeX ifadesini ver.'
-        );
-        if (!latex) return;
-        const clean = latex.replace(/```latex|```|\$\$/g, '').trim();
-        let rendered = clean;
-        if (window.katex?.renderToString) {
-          try { rendered = window.katex.renderToString(clean, { displayMode: true, throwOnError: false }); } catch {}
-        }
-        spawnSolutionCard({ title: '∑ KaTeX Formül', htmlBody: rendered });
-        toast('KaTeX kartı tuvale eklendi');
-      } catch (err) {
-        toast('Okuma hatası: ' + err.message);
-      }
-    });
-
-    makeBtn('🧮 Çöz & Birim', 'Soruyu adım adım çöz ve SI birim kontrolü yap', async () => {
-      const rect = getLassoStageRect();
-      const img = captureStageImage(rect);
-      if (!img) return;
-      toast('Soru çözülüyor ve SI birimleri kontrol ediliyor...');
-      try {
-        const ans = await askGeminiVision(
-          img,
-          'Görseldeki mühendislik/fizik/kalkülüs sorusunu Türkçe olarak kısa ve net adımlarla çöz. En sona "SI_BIRIM:" etiketiyle kullanılan tüm büyüklüklerin SI birim ve boyut analizini (ör. V = I·R -> [V] = [A]·[Ω]) tek paragrafta yaz.'
-        );
-        if (!ans) return;
-        const parts = ans.split(/SI_BIRIM\s*:/i);
-        const pretty = window.prettifyMathText ? window.prettifyMathText(parts[0].trim()) : parts[0].trim();
-        const siPart = parts[1] ? (window.prettifyMathText ? window.prettifyMathText(parts[1].trim()) : parts[1].trim()) : '';
-        spawnSolutionCard({
-          title: '🧮 Adım Adım Çözüm',
-          htmlBody: pretty.replace(/\n/g, '<br>'),
-          siText: siPart
-        });
-        toast('Çözüm ve SI birim kartı eklendi');
-      } catch (err) {
-        toast('Çözüm hatası: ' + err.message);
-      }
-    });
-
-    makeBtn('📈 Grafik', 'Seçili fonksiyonu grafik çizicide aç', async () => {
-      const rect = getLassoStageRect();
-      const img = captureStageImage(rect);
-      if (!img) return;
-      toast('Fonksiyon okunuyor...');
-      try {
-        const expr = await askGeminiVision(
-          img,
-          'Görseldeki el yazısı fonksiyonu yalnızca JavaScript/matematik sözdiziminde tek satır olarak yaz (örnek: 3*x^2 + 6 veya sin(x)/x). Başka hiçbir kelime veya f(x)= yazma.'
-        );
-        if (!expr) return;
-        openGraphWithFormula(expr.replace(/[`$]/g, '').trim());
-      } catch (err) {
-        toast('Grafik okuma hatası: ' + err.message);
-      }
-    });
-
-    makeBtn('📌 Köşe', 'Seçimi köşedeki referans penceresine sabitle', () => {
-      const rect = getLassoStageRect();
-      const img = captureStageImage(rect);
-      if (img) {
-        openPipWithDataUrl(img);
-        toast('Seçim köşeye sabitlendi');
-      }
-    });
   };
 
   const renderFlashcardDeck = () => {
@@ -2726,7 +2550,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     initTapeTool();
-    enhanceGizmoBar();
     enhancePdfAndStudy();
   };
 
@@ -2735,7 +2558,6 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     initProTools();
   }
-  window.addEventListener('load', initProTools);
 })();
 </script>
 </body>
