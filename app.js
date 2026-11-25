@@ -1018,17 +1018,99 @@
     app.history.execute(new ON.EraseStrokesCommand(doc, gizmo.strokes.filter(s => s.pts), []));
     clearSelection();
   }
-  $('gzAi').onclick = async () => {
-    if (!gizmo) return;
+  const LASSO_PROMPTS = {
+    katex: {
+      theme: 'gokyuzu',
+      prompt: 'Bu görseldeki el yazısı denklemi veya formülü yalnızca temiz LaTeX blok formatında ($$...$$) yaz. Başlık olarak kısa bir formül adı (### Formül) ekle, başka açıklama yapma.'
+    },
+    steps: {
+      theme: 'koyu',
+      prompt: 'Bu görseldeki mühendislik/matematik sorusunu Türkçe olarak kısa, numaralı adımlarla çöz. Tüm matematiği LaTeX ($...$ ve $$...$$) ile yaz, en sona sonucu $\\boxed{}$ içinde ver.'
+    },
+    card: {
+      theme: 'nane',
+      prompt: 'Bu seçili bölgedeki konuyu sınav tekrarı için en fazla 4 maddelik net bir özet kartına dönüştür. İlk satıra ### ile kısa başlık koy, kritik formülleri LaTeX ile ekle.'
+    },
+    quiz: {
+      theme: 'krem',
+      prompt: 'Bu görseldeki sorunun veya kavramın mantığına benzer 1 adet özgün pratik soru üret. Önce "### Pratik Soru" başlığıyla soruyu yaz, en alta "Çözüm:" başlığıyla kısa adım adım çözümünü ekle.'
+    }
+  };
+
+  async function captureLassoContext() {
     const b = Geo.expand(gizmo.worldBBox(), 10);
     const rect = { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY };
     const scale = Math.min(2.5, 3000 / Math.max(rect.w, rect.h));
-    app.toast('Bölge hazırlanıyor…');
-    const canvas = await renderRegion(liveData(), rect, scale, { print: true, strokeFilter: new Set(gizmo.strokes), cards: false });
+    const canvas = await renderRegion(liveData(), rect, scale, {
+      print: true,
+      strokeFilter: new Set(gizmo.strokes),
+      cards: false
+    });
     const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
     const b64 = await blobToB64(blob);
-    const page = pageAt((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2), o = app.pageOrigin(page);
-    ON.AI.setContext({ b64, mime: 'image/png', label: `Kement seçimi (${gizmo.strokes.length} çizgi) gönderilecek`, anchor: { page, x: b.maxX - o.x, y: b.minY - o.y }, url: URL.createObjectURL(blob) });
+    const page = pageAt((b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2);
+    const o = app.pageOrigin(page);
+    return {
+      b64,
+      blob,
+      anchor: { page, x: b.maxX - o.x, y: b.minY - o.y }
+    };
+  }
+
+  document.querySelectorAll('#gizmoBar [data-gz-ai]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!gizmo) return;
+      if (!ON.settings.key) {
+        app.toast("Önce Ayarlar'dan Gemini API anahtarını ekle");
+        app.openSettings();
+        return;
+      }
+      const mode = LASSO_PROMPTS[btn.dataset.gzAi];
+      if (!mode) return;
+
+      const bar = $('gizmoBar');
+      bar.classList.add('is-busy');
+      app.toast('Kement seçimi işleniyor…');
+
+      try {
+        const ctx = await captureLassoContext();
+        const res = await ON.gemini(
+          ON.settings,
+          [
+            { inline_data: { mime_type: 'image/png', data: ctx.b64 } },
+            { text: `Defter: ${app.nb?.title || ''}\n\n${mode.prompt}` }
+          ],
+          status => app.toast(status)
+        );
+
+        const card = ON.cards.create(res.text, ctx.anchor);
+        if (card && mode.theme) {
+          card.theme = mode.theme;
+          const node = ON.cards.nodes.get(card.id);
+          if (node) node.className = `snote t-${card.theme}`;
+          markMetaDirty();
+        }
+        clearSelection();
+        app.toast('Kart tuvale mühürlendi');
+      } catch (err) {
+        app.toast(err.message || 'İşlem başarısız oldu', 3200);
+      } finally {
+        bar.classList.remove('is-busy');
+      }
+    };
+  });
+
+  $('gzAi').onclick = async () => {
+    if (!gizmo) return;
+    app.toast('Bölge hazırlanıyor…');
+    const ctx = await captureLassoContext();
+    ON.AI.setContext({
+      b64: ctx.b64,
+      mime: 'image/png',
+      label: `Kement seçimi (${gizmo.strokes.length} çizgi) gönderilecek`,
+      anchor: ctx.anchor,
+      url: URL.createObjectURL(ctx.blob)
+    });
     ON.AI.open();
     $('askIn').focus();
   };
