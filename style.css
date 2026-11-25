@@ -307,3 +307,43 @@ svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width:
   #tools .sz { width: 32px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+/* ================= Kement Hızlı AI Menüsü ================= */
+#gizmoBar {
+  gap: 4px;
+  padding: 5px 6px;
+  border-color: rgba(125, 211, 252, 0.18);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+#gizmoBar .sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+#gizmoBar .gz-quick {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+#gizmoBar .gz-quick.acc {
+  background: rgba(99, 102, 241, 0.24);
+  color: #7DD3FC;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+}
+
+#gizmoBar .gz-quick.acc:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+#gizmoBar.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
