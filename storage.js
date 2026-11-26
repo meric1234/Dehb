@@ -1,423 +1,227 @@
-/* =====================================================================
-   Odak Not — storage.js
-   Sıkıştırılmış IndexedDB depolama, çizgi kodlayıcı, yedekleme, göç.
-   Depolar:
-     meta            : anahtar-değer (kütüphane / ayar bayrakları)
-     pdfs            : { hash, name, size, blob }   (SHA-256 ile tekilleştirilmiş ham PDF)
-     notebooks       : defter kayıtları
-     pages           : { notebookId, pageIndex, data, gz, n }  anahtar [notebookId, pageIndex]
-     thumbnails      : { notebookId, pageIndex, v, blob }
-     pdf_text_cache  : { hash, pageIndex, text, items }
-     assets          : { id, notebookId, blob, type }  (eklenen görseller)
-   ===================================================================== */
-'use strict';
-window.ON = window.ON || {};
-(() => {
-  const ON = window.ON;
-  const DB_NAME = 'odak-not';
-  const DB_VERSION = 2;
+/**
+ * OdakStorage — Gzip Sıkıştırmalı, Ramer-Douglas-Peucker Sadeleştirmeli
+ * ve Float32Array Paketlemeli Dayanıklı IndexedDB Depolama Motoru
+ */
+class StrokePacker {
+  // Ramer-Douglas-Peucker çizgi sadeleştirme algoritması
+  static simplifyPoints(points, epsilon = 0.65) {
+    if (!Array.isArray(points) || points.length <= 2) return points;
 
-  ON.uid = () => Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-5);
+    const perpDist = (pt, lineStart, lineEnd) => {
+      const dx = lineEnd.x - lineStart.x;
+      const dy = lineEnd.y - lineStart.y;
+      if (dx === 0 && dy === 0) return Math.hypot(pt.x - lineStart.x, pt.y - lineStart.y);
+      const t = ((pt.x - lineStart.x) * dx + (pt.y - lineStart.y) * dy) / (dx * dx + dy * dy);
+      const projX = lineStart.x + t * dx;
+      const projY = lineStart.y + t * dy;
+      return Math.hypot(pt.x - projX, pt.y - projY);
+    };
 
-  /* ---------------- IndexedDB çekirdeği ---------------- */
-  let dbPromise = null;
-  let activeDb = null;
+    let maxDist = 0;
+    let index = 0;
+    const end = points.length - 1;
 
-  function open(forceNew = false) {
-    if (forceNew) {
-      dbPromise = null;
-      activeDb = null;
-    }
-    if (dbPromise) return dbPromise;
-
-    dbPromise = new Promise((resolve, reject) => {
-      let req;
-      try { req = indexedDB.open(DB_NAME, DB_VERSION); } catch (e) {
-        dbPromise = null;
-        reject(e);
-        return;
+    for (let i = 1; i < end; i++) {
+      const d = perpDist(points[i], points[0], points[end]);
+      if (d > maxDist) {
+        maxDist = d;
+        index = i;
       }
+    }
 
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        const make = (name, opts, indexes = []) => {
-          if (db.objectStoreNames.contains(name)) return;
-          const s = db.createObjectStore(name, opts);
-          for (const [iname, path] of indexes) s.createIndex(iname, path);
-        };
-        make('meta');
-        make('pdfs', { keyPath: 'hash' });
-        make('notebooks', { keyPath: 'id' }, [['folderId', 'folderId']]);
-        make('pages', { keyPath: ['notebookId', 'pageIndex'] }, [['notebookId', 'notebookId']]);
-        make('thumbnails', { keyPath: ['notebookId', 'pageIndex'] }, [['notebookId', 'notebookId']]);
-        make('pdf_text_cache', { keyPath: ['hash', 'pageIndex'] }, [['hash', 'hash']]);
-        make('assets', { keyPath: 'id' }, [['notebookId', 'notebookId']]);
+    if (maxDist > epsilon) {
+      const left = this.simplifyPoints(points.slice(0, index + 1), epsilon);
+      const right = this.simplifyPoints(points.slice(index), epsilon);
+      return left.slice(0, -1).concat(right);
+    }
+    return [points[0], points[end]];
+  }
+
+  static packStroke(stroke) {
+    if (!Array.isArray(stroke.points) || stroke.points.length === 0) return stroke;
+    const simplified = this.simplifyPoints(stroke.points, 0.55);
+    const flat = new Float32Array(simplified.length * 3);
+    for (let i = 0; i < simplified.length; i++) {
+      flat[i * 3] = Math.round(simplified[i].x * 10) / 10;
+      flat[i * 3 + 1] = Math.round(simplified[i].y * 10) / 10;
+      flat[i * 3 + 2] = Math.round((simplified[i].p ?? 0.5) * 100) / 100;
+    }
+    return {
+      ...stroke,
+      points: undefined,
+      packedPoints: Array.from(flat)
+    };
+  }
+
+  static unpackStroke(stroke) {
+    if (Array.isArray(stroke.points)) return stroke;
+    if (!Array.isArray(stroke.packedPoints)) return { ...stroke, points: [] };
+    const flat = stroke.packedPoints;
+    const points = [];
+    for (let i = 0; i < flat.length; i += 3) {
+      points.push({ x: flat[i], y: flat[i + 1], p: flat[i + 2] ?? 0.5 });
+    }
+    const unpacked = { ...stroke, points };
+    delete unpacked.packedPoints;
+    return unpacked;
+  }
+}
+
+class OdakStorage {
+  constructor() {
+    this.dbName = 'OdakNotDB_v2';
+    this.db = null;
+    this.initPromise = null;
+  }
+
+  async init() {
+    if (this.db) return this.db;
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open(this.dbName, 1);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains('notebooks')) {
+          db.createObjectStore('notebooks', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('pdfs')) {
+          db.createObjectStore('pdfs', { keyPath: 'id' });
+        }
       };
-
-      req.onsuccess = () => {
-        const db = req.result;
-        activeDb = db;
-        db.onversionchange = () => {
-          try { db.close(); } catch {}
-          if (activeDb === db) activeDb = null;
-          dbPromise = null;
+      req.onsuccess = (e) => {
+        this.db = e.target.result;
+        this.db.onversionchange = () => {
+          this.db.close();
+          this.db = null;
+          this.initPromise = null;
         };
-        db.onclose = () => {
-          if (activeDb === db) activeDb = null;
-          dbPromise = null;
-        };
-        resolve(db);
+        resolve(this.db);
       };
-
       req.onerror = () => {
-        dbPromise = null;
+        this.initPromise = null;
         reject(req.error);
       };
-
-      req.onblocked = () => {
-        dbPromise = null;
-        reject(new Error('Veritabanı başka bir sekmede açık. Diğer sekmeleri kapatıp yenileyin.'));
-      };
     });
 
-    return dbPromise;
+    return this.initPromise;
   }
 
-  const wrap = req => new Promise((res, rej) => {
-    req.onsuccess = () => res(req.result);
-    req.onerror = () => rej(req.error);
-  });
-
-  async function tx(stores, mode, fn, retried = false) {
-    let db;
-    try {
-      db = await open(false);
-    } catch (e) {
-      if (!retried) return tx(stores, mode, fn, true);
-      throw e;
+  prepareForStorage(notebook) {
+    const clone = JSON.parse(JSON.stringify(notebook));
+    if (Array.isArray(clone.pages)) {
+      for (const page of clone.pages) {
+        if (Array.isArray(page.strokes)) {
+          page.strokes = page.strokes.map((s) => StrokePacker.packStroke(s));
+        }
+      }
     }
+    return clone;
+  }
+
+  restoreFromStorage(notebook) {
+    if (!notebook || !Array.isArray(notebook.pages)) return notebook;
+    for (const page of notebook.pages) {
+      if (Array.isArray(page.strokes)) {
+        page.strokes = page.strokes.map((s) => StrokePacker.unpackStroke(s));
+      }
+    }
+    return notebook;
+  }
+
+  async compressJSON(obj) {
+    const jsonStr = JSON.stringify(obj);
+    if (typeof CompressionStream === 'undefined') {
+      return { compressed: false, payload: jsonStr };
+    }
+    try {
+      const stream = new Blob([jsonStr]).stream().pipeThrough(new CompressionStream('gzip'));
+      const buf = await new Response(stream).arrayBuffer();
+      return { compressed: true, payload: buf };
+    } catch (_) {
+      return { compressed: false, payload: jsonStr };
+    }
+  }
+
+  async decompressJSON(record) {
+    if (!record) return null;
+    try {
+      if (!record.compressed || typeof DecompressionStream === 'undefined') {
+        const parsed = typeof record.payload === 'string' ? JSON.parse(record.payload) : record;
+        return this.restoreFromStorage(parsed);
+      }
+      const stream = new Blob([record.payload]).stream().pipeThrough(new DecompressionStream('gzip'));
+      const text = await new Response(stream).text();
+      return this.restoreFromStorage(JSON.parse(text));
+    } catch (err) {
+      console.error('Kayıt açma hatası:', err);
+      return null;
+    }
+  }
+
+  async saveNotebook(notebook) {
+    if (!notebook || !notebook.id) return false;
+    await this.init();
+    const compactNotebook = this.prepareForStorage(notebook);
+    const packed = await this.compressJSON(compactNotebook);
 
     return new Promise((resolve, reject) => {
-      let t;
       try {
-        t = db.transaction(stores, mode);
+        const tx = this.db.transaction('notebooks', 'readwrite');
+        const store = tx.objectStore('notebooks');
+        store.put({
+          id: notebook.id,
+          title: notebook.title,
+          updatedAt: Date.now(),
+          ...packed
+        });
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error || new Error('IndexedDB işlemi iptal edildi.'));
       } catch (err) {
-        dbPromise = null;
-        if (!retried) {
-          tx(stores, mode, fn, true).then(resolve, reject);
-          return;
-        }
         reject(err);
-        return;
-      }
-
-      let out;
-      t.oncomplete = () => resolve(out);
-      t.onerror = () => reject(t.error);
-      t.onabort = () => reject(t.error || new Error('İşlem iptal edildi'));
-
-      try {
-        const r = fn(t);
-        if (r && typeof r.then === 'function') r.then(v => { out = v; }, reject);
-        else out = r;
-      } catch (e) {
-        reject(e);
       }
     });
   }
 
-  const Store = {
-    open,
-    get: (store, key) => tx([store], 'readonly', t => wrap(t.objectStore(store).get(key))),
-    put: (store, value, key) => tx([store], 'readwrite', t => {
-      const os = t.objectStore(store);
-      if (key !== undefined) os.put(value, key);
-      else os.put(value);
-    }),
-    del: (store, key) => tx([store], 'readwrite', t => { t.objectStore(store).delete(key); }),
-    all: (store, index, query) => tx([store], 'readonly', t => {
-      const s = t.objectStore(store);
-      return wrap(index ? s.index(index).getAll(query) : s.getAll(query));
-    }),
-    allKeys: (store) => tx([store], 'readonly', t => wrap(t.objectStore(store).getAllKeys())),
-    delByIndex: (store, index, value) => tx([store], 'readwrite', t => new Promise((res, rej) => {
-      const r = t.objectStore(store).index(index).openCursor(IDBKeyRange.only(value));
-      r.onsuccess = () => { const c = r.result; if (c) { c.delete(); c.continue(); } else res(); };
-      r.onerror = () => rej(r.error);
-    })),
-    putMany: (store, values) => tx([store], 'readwrite', t => { const s = t.objectStore(store); for (const v of values) s.put(v); }),
-    has: async (store) => (await open()).objectStoreNames.contains(store),
-    meta: {
-      get: key => Store.get('meta', key),
-      set: (key, val) => Store.put('meta', val, key)
-    }
-  };
-  ON.Store = Store;
-
-  /* ---------------- Sıkıştırma ---------------- */
-  const canGzip = typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
-  async function gzip(u8) {
-    if (!canGzip) return { gz: false, data: u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) };
-    try {
-      const stream = new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip'));
-      return { gz: true, data: await new Response(stream).arrayBuffer() };
-    } catch {
-      return { gz: false, data: u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength) };
-    }
-  }
-  async function gunzip(buf, gz) {
-    if (!gz) return new Uint8Array(buf);
-    try {
-      const stream = new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'));
-      return new Uint8Array(await new Response(stream).arrayBuffer());
-    } catch {
-      return new Uint8Array(buf);
-    }
-  }
-  ON.gzip = gzip; ON.gunzip = gunzip;
-
-  /* ---------------- Ramer–Douglas–Peucker (stride = 3) ---------------- */
-  function rdp(pts, epsilon = 0.3) {
-    const n = pts.length / 3;
-    if (n < 3) return pts;
-    const keep = new Uint8Array(n);
-    keep[0] = keep[n - 1] = 1;
-    const e2 = epsilon * epsilon;
-    const stack = [0, n - 1];
-    while (stack.length) {
-      const e = stack.pop(), s = stack.pop();
-      const ax = pts[s * 3], ay = pts[s * 3 + 1], bx = pts[e * 3], by = pts[e * 3 + 1];
-      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
-      let max = 0, idx = -1;
-      for (let i = s + 1; i < e; i++) {
-        const px = pts[i * 3], py = pts[i * 3 + 1];
-        let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
-        t = t < 0 ? 0 : t > 1 ? 1 : t;
-        const qx = ax + t * dx - px, qy = ay + t * dy - py, d = qx * qx + qy * qy;
-        if (d > max) { max = d; idx = i; }
-      }
-      if (max > e2 && idx > 0) { keep[idx] = 1; stack.push(s, idx, idx, e); }
-    }
-    let k = 0;
-    for (let i = 0; i < n; i++) k += keep[i];
-    const out = new Float32Array(k * 3);
-    for (let i = 0, j = 0; i < n; i++) if (keep[i]) { out[j++] = pts[i * 3]; out[j++] = pts[i * 3 + 1]; out[j++] = pts[i * 3 + 2]; }
-    return out;
-  }
-  ON.rdp = rdp;
-
-  /* ---------------- Çizgi kodlayıcı ---------------- */
-  const enc = new TextEncoder(), dec = new TextDecoder();
-  async function encodeStrokes(strokes, ox = 0, oy = 0) {
-    let total = 0;
-    const meta = strokes.map(s => {
-      total += s.pts.length;
-      const m = { i: s.id, t: s.tool, c: s.color, z: +s.size.toFixed(2), n: s.pts.length / 3 };
-      if (s.shape) m.sh = s.shape;
-      if (s.flat) m.f = 1;
-      if (s.text) m.tx = s.text;
-      if (s.grp) m.g = s.grp;
-      return m;
+  async getAllNotebooks() {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('notebooks', 'readonly');
+      const req = tx.objectStore('notebooks').getAll();
+      req.onsuccess = async () => {
+        const list = [];
+        for (const row of req.result || []) {
+          const data = await this.decompressJSON(row);
+          if (data) list.push(data);
+        }
+        list.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        resolve(list);
+      };
+      req.onerror = () => reject(req.error);
     });
-    const head = enc.encode(JSON.stringify({ v: 2, s: meta }));
-    const pad = (4 - ((4 + head.length) % 4)) % 4;
-    const buf = new ArrayBuffer(4 + head.length + pad + total * 4);
-    new DataView(buf).setUint32(0, head.length, true);
-    new Uint8Array(buf, 4, head.length).set(head);
-    const f = new Float32Array(buf, 4 + head.length + pad, total);
-    let o = 0;
-    for (const s of strokes) {
-      const p = s.pts;
-      for (let i = 0; i < p.length; i += 3) { f[o++] = p[i] - ox; f[o++] = p[i + 1] - oy; f[o++] = p[i + 2]; }
-    }
-    return gzip(new Uint8Array(buf));
-  }
-  async function decodeStrokes(rec, ox = 0, oy = 0) {
-    if (!rec || !rec.data) return [];
-    const u8 = await gunzip(rec.data, rec.gz);
-    const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-    const hl = new DataView(buf).getUint32(0, true);
-    const head = JSON.parse(dec.decode(new Uint8Array(buf, 4, hl)));
-    const pad = (4 - ((4 + hl) % 4)) % 4;
-    const all = new Float32Array(buf, 4 + hl + pad);
-    const out = [];
-    let o = 0;
-    for (const m of head.s) {
-      const len = m.n * 3, pts = new Float32Array(len);
-      for (let i = 0; i < len; i += 3) { pts[i] = all[o + i] + ox; pts[i + 1] = all[o + i + 1] + oy; pts[i + 2] = all[o + i + 2]; }
-      o += len;
-      out.push({ id: m.i, tool: m.t, color: m.c, size: m.z, pts, shape: m.sh || null, flat: !!m.f, text: m.tx || '', grp: m.g || '' });
-    }
-    return out;
-  }
-  ON.encodeStrokes = encodeStrokes;
-  ON.decodeStrokes = decodeStrokes;
-
-  /* ---------------- SHA-256 ---------------- */
-  ON.sha256 = async (buf) => {
-    if (crypto && crypto.subtle) {
-      const h = await crypto.subtle.digest('SHA-256', buf);
-      return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
-    }
-    let h1 = 0x811c9dc5, u8 = new Uint8Array(buf);
-    for (let i = 0; i < u8.length; i++) { h1 ^= u8[i]; h1 = Math.imul(h1, 16777619); }
-    return 'fnv-' + (h1 >>> 0).toString(16) + '-' + u8.length;
-  };
-
-  /* ---------------- Kalıcı depolama, kota, temizlik ---------------- */
-  ON.storageInfo = async () => {
-    const out = { usage: 0, quota: 0, persisted: false };
-    try { if (navigator.storage?.estimate) Object.assign(out, await navigator.storage.estimate()); } catch {}
-    try { if (navigator.storage?.persisted) out.persisted = await navigator.storage.persisted(); } catch {}
-    return out;
-  };
-  ON.requestPersist = async () => {
-    try {
-      if (navigator.storage?.persisted && await navigator.storage.persisted()) return true;
-      if (navigator.storage?.persist) return await navigator.storage.persist();
-    } catch {}
-    return false;
-  };
-
-  if (typeof window !== 'undefined') {
-    window.addEventListener('DOMContentLoaded', () => {
-      ON.requestPersist().catch(() => {});
-    }, { once: true });
   }
 
-  ON.cleanupOrphans = async () => {
-    const nbs = await Store.all('notebooks');
-    const used = new Set(nbs.map(n => n.pdfHash).filter(Boolean));
-    const ids = new Set(nbs.map(n => n.id));
-    let removed = 0, freed = 0;
-    for (const p of await Store.all('pdfs')) {
-      if (!used.has(p.hash)) {
-        freed += p.size || 0; removed++;
-        await Store.del('pdfs', p.hash);
-        await Store.delByIndex('pdf_text_cache', 'hash', p.hash);
-      }
-    }
-    for (const a of await Store.all('assets')) {
-      if (!ids.has(a.notebookId)) { freed += a.blob?.size || 0; removed++; await Store.del('assets', a.id); }
-    }
-    for (const k of await Store.allKeys('thumbnails')) if (!ids.has(k[0])) await Store.del('thumbnails', k);
-    for (const k of await Store.allKeys('pages')) if (!ids.has(k[0])) await Store.del('pages', k);
-    return { removed, freed };
-  };
+  async savePdfBlob(pdfId, arrayBuffer, fileName) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('pdfs', 'readwrite');
+      tx.objectStore('pdfs').put({ id: pdfId, arrayBuffer, fileName, savedAt: Date.now() });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
 
-  /* ---------------- Yedekleme (.odaknot) ---------------- */
-  function b64FromBuf(buf) {
-    const u8 = new Uint8Array(buf);
-    let s = '';
-    for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
-    return btoa(s);
+  async getPdfBlob(pdfId) {
+    await this.init();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction('pdfs', 'readonly');
+      const req = tx.objectStore('pdfs').get(pdfId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
   }
-  function bufFromB64(b64) {
-    const s = atob(b64), u8 = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
-    return u8.buffer;
-  }
-  async function toPlain(v) {
-    if (v instanceof Blob) return { __blob: b64FromBuf(await v.arrayBuffer()), type: v.type };
-    if (v instanceof ArrayBuffer) return { __buf: b64FromBuf(v) };
-    if (ArrayBuffer.isView(v)) return { __buf: b64FromBuf(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength)) };
-    if (Array.isArray(v)) { const a = []; for (const x of v) a.push(await toPlain(x)); return a; }
-    if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = await toPlain(v[k]); return o; }
-    return v;
-  }
-  function fromPlain(v) {
-    if (Array.isArray(v)) return v.map(fromPlain);
-    if (v && typeof v === 'object') {
-      if ('__blob' in v) return new Blob([bufFromB64(v.__blob)], { type: v.type || '' });
-      if ('__buf' in v) return bufFromB64(v.__buf);
-      const o = {}; for (const k of Object.keys(v)) o[k] = fromPlain(v[k]); return o;
-    }
-    return v;
-  }
-  ON.exportBackup = async (onProgress = () => {}) => {
-    const out = { app: 'odak-not', version: 2, created: Date.now(), library: await Store.meta.get('library') };
-    for (const name of ['notebooks', 'pages', 'pdfs', 'assets']) {
-      onProgress(`${name} hazırlanıyor…`);
-      out[name] = await toPlain(await Store.all(name));
-    }
-    onProgress('Sıkıştırılıyor…');
-    const { data } = await gzip(enc.encode(JSON.stringify(out)));
-    return new Blob([data], { type: 'application/octet-stream' });
-  };
-  ON.importBackup = async (file, onProgress = () => {}) => {
-    const buf = await file.arrayBuffer();
-    const u8 = new Uint8Array(buf);
-    const isGz = u8[0] === 0x1f && u8[1] === 0x8b;
-    onProgress('Açılıyor…');
-    const json = JSON.parse(dec.decode(await gunzip(buf, isGz)));
-    if (json.app !== 'odak-not') throw new Error('Bu bir Odak Not yedeği değil.');
-    const data = fromPlain(json);
-    const lib = (await Store.meta.get('library')) || { folders: [] };
-    for (const f of (data.library?.folders || [])) if (!lib.folders.some(x => x.id === f.id)) lib.folders.push(f);
-    await Store.meta.set('library', lib);
-    for (const name of ['pdfs', 'assets', 'pages', 'notebooks']) {
-      onProgress(`${name} yükleniyor…`);
-      if (data[name]?.length) await Store.putMany(name, data[name]);
-    }
-    return { notebooks: data.notebooks?.length || 0 };
-  };
+}
 
-  /* ---------------- v1 → v2 göçü ---------------- */
-  ON.migrateV1 = async () => {
-    if (!(await Store.has('kv'))) return 0;
-    if (await Store.meta.get('migratedV1')) return 0;
-    const kvGet = key => tx(['kv'], 'readonly', t => wrap(t.objectStore('kv').get(key)));
-    const index = await kvGet('index');
-    if (!index || !index.notes) { await Store.meta.set('migratedV1', true); return 0; }
-    const lib = (await Store.meta.get('library')) || { folders: [] };
-    for (const f of index.folders || []) if (!lib.folders.some(x => x.id === f.id)) lib.folders.push({ id: f.id, name: f.name, created: Date.now() });
-    await Store.meta.set('library', lib);
-    let count = 0;
-    for (const n of index.notes) {
-      const d = (await kvGet('note:' + n.id)) || { strokes: [] };
-      const oldPages = (await kvGet('pages:' + n.id)) || [];
-      const nb = ON.newNotebookRecord({
-        id: n.id, folderId: n.folderId, title: n.title || 'Adsız not',
-        mode: 'infinite',
-        paper: { template: d.bg === 'dots' ? 'dots' : d.bg === 'plain' ? 'plain' : 'grid', theme: 'dark', orient: 'p' }
-      });
-      nb.updated = n.updated || Date.now();
-      for (const p of oldPages) {
-        const blob = await (await fetch(p.src)).blob();
-        const id = ON.uid();
-        await Store.put('assets', { id, notebookId: nb.id, blob, type: 'image' });
-        nb.objects.push({ id: ON.uid(), type: 'image', page: 0, asset: id, x: p.x, y: p.y, w: p.w, h: p.h });
-      }
-      const strokes = (d.strokes || []).map(s => {
-        const pts = new Float32Array(s.pts.length * 3);
-        s.pts.forEach((q, i) => { pts[i * 3] = q[0]; pts[i * 3 + 1] = q[1]; pts[i * 3 + 2] = q[2] ?? 0.5; });
-        return { id: s.id || ON.uid(), tool: s.hl ? 'highlighter' : 'fountain', color: s.hl ? '#C7B3FF' : s.color, size: s.hl ? 18 : s.w, pts };
-      });
-      const enc0 = await encodeStrokes(strokes, 0, 0);
-      await Store.put('pages', { notebookId: nb.id, pageIndex: 0, data: enc0.data, gz: enc0.gz, n: strokes.length });
-      await Store.put('notebooks', nb);
-      count++;
-    }
-    await Store.meta.set('migratedV1', true);
-    return count;
-  };
-
-  /* ---------------- Defter kaydı fabrikası ---------------- */
-  ON.A4 = { w: 794, h: 1123 };
-  ON.newNotebookRecord = (o = {}) => {
-    const mode = o.mode || 'paged';
-    const paper = Object.assign({ template: 'grid', theme: 'dark', orient: 'p' }, o.paper || {});
-    const pw = paper.orient === 'l' ? ON.A4.h : ON.A4.w, ph = paper.orient === 'l' ? ON.A4.w : ON.A4.h;
-    return {
-      id: o.id || ON.uid(),
-      folderId: o.folderId || null,
-      title: o.title || 'Adsız defter',
-      created: Date.now(), updated: Date.now(),
-      mode, paper,
-      pdfHash: o.pdfHash || null, pdfName: o.pdfName || '', pdfDark: !!o.pdfDark,
-      pages: o.pages || (mode === 'infinite' ? [{ k: 'inf', w: 0, h: 0, v: 0 }] : [{ k: 'paper', w: pw, h: ph, v: 0 }]),
-      objects: [], cards: [],
-      last: null, view: null
-    };
-  };
-})();
+window.StrokePacker = StrokePacker;
+window.OdakStorage = OdakStorage;
