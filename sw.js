@@ -1,5 +1,5 @@
-const CACHE_NAME = 'odak-not-v4-clean';
-const APP_SHELL = [
+const CACHE_NAME = 'odak-not-v2';
+const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
@@ -8,66 +8,59 @@ const APP_SHELL = [
   './pdf-engine.js',
   './ai-study.js',
   './quiz.js',
-  './app.js',
   './graph.js',
-  './manifest.webmanifest'
+  './app.js',
+  './manifest.json'
 ];
 
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
+  );
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).catch(() => {})
-  );
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    ).then(() => self.clients.claim())
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
   );
+  self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
 
-  const url = new URL(req.url);
-  if (url.hostname.includes('generativelanguage.googleapis.com')) return;
-
-  const isCodeOrDoc =
-    req.mode === 'navigate' ||
-    url.pathname.endsWith('.html') ||
-    url.pathname.endsWith('.js') ||
-    url.pathname.endsWith('.css') ||
-    url.pathname.endsWith('.webmanifest');
-
-  if (isCodeOrDoc) {
+  // Güncellemelerin GitHub Pages'te anında görünmesi için yerel dosyalarda Network-First stratejisi
+  if (isSameOrigin) {
     event.respondWith(
-      fetch(req, { cache: 'no-store' })
-        .then(res => {
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then(c => c.put(req, copy)).catch(() => {});
+      fetch(event.request)
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-          return res;
+          return response;
         })
-        .catch(() => caches.match(req).then(cached => cached || caches.match('./index.html')))
+        .catch(() => caches.match(event.request))
     );
     return;
   }
 
+  // Harici CDN kaynakları (KaTeX, PDF.js) için Cache-First stratejisi
   event.respondWith(
-    caches.match(req).then(cached => {
+    caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then(res => {
-        if (res && res.status === 200) {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(req, copy)).catch(() => {});
+      return fetch(event.request).then((response) => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
-        return res;
+        return response;
       });
     })
   );
 });
-
