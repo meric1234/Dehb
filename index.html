@@ -1,15 +1,35 @@
 <!DOCTYPE html>
-<html lang="tr" data-theme="dark">
+<html lang="tr" data-ui-theme="midnight">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta name="theme-color" content="#0b1120" id="meta-theme-color" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Odak Not — Akıllı Mühendislik & Çalışma Defteri</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="style.css" />
+  <script>
+    // İlk boyamada tema sıçramasını önlemek için kayıtlı temayı anında uygula
+    (function () {
+      try {
+        const savedTheme = localStorage.getItem('odak_ui_theme') || 'midnight';
+        document.documentElement.setAttribute('data-ui-theme', savedTheme);
+        const savedAccent = localStorage.getItem('odak_ui_accent');
+        if (savedAccent) {
+          const hex = savedAccent.replace('#', '');
+          if (hex.length === 6) {
+            const r = parseInt(hex.slice(0, 2), 16);
+            const g = parseInt(hex.slice(2, 4), 16);
+            const b = parseInt(hex.slice(4, 6), 16);
+            document.documentElement.style.setProperty('--accent', savedAccent);
+            document.documentElement.style.setProperty('--accent-rgb', `${r}, ${g}, ${b}`);
+          }
+        }
+      } catch (_) {}
+    })();
+  </script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"></script>
@@ -51,7 +71,7 @@
         <button id="btn-palm-rejection" class="pill-btn active" title="Sadece S Pen ile Çiz (Avuç İçi Reddi)">✍️ S Pen</button>
       </div>
 
-      <!-- Sağ Odak & Akıllı Modüller -->
+      <!-- Sağ Odak, Renkli Temalar & Akıllı Modüller -->
       <div class="toolbar-group right-controls">
         <select id="paper-template" class="select-pill" title="Sayfa Şablonu">
           <option value="grid">Kareli</option>
@@ -75,7 +95,60 @@
           <button id="btn-focus-sound" class="icon-btn" title="Kahverengi Gürültü (Odak Sesi)">🎧</button>
         </div>
 
-        <button id="btn-theme" class="icon-btn" title="Tema Değiştir (Koyu / Kağıt / Sepya)">🌓</button>
+        <!-- 8 Renkli Tema & Vurgu Rengi Seçici -->
+        <div class="theme-picker-wrapper" id="theme-picker-wrapper">
+          <button id="btn-theme" class="pill-btn" title="8 Renkli Tema ve Vurgu Rengi">🎨 Tema</button>
+          <div id="theme-popover" class="theme-popover hidden">
+            <p class="theme-popover-title">Arayüz Teması (8 Seçenek)</p>
+            <div class="theme-grid" id="theme-options-grid">
+              <button type="button" class="theme-option-btn" data-theme-id="midnight">
+                <span class="theme-preview-dots"><span style="background:#0b1120"></span><span style="background:#38bdf8"></span></span>
+                <span>Gece Laciverti</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="obsidian">
+                <span class="theme-preview-dots"><span style="background:#000000"></span><span style="background:#a855f7"></span></span>
+                <span>AMOLED Siyah</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="emerald-forest">
+                <span class="theme-preview-dots"><span style="background:#051612"></span><span style="background:#10b981"></span></span>
+                <span>Zümrüt Orman</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="sunset-amber">
+                <span class="theme-preview-dots"><span style="background:#160f0b"></span><span style="background:#f59e0b"></span></span>
+                <span>Kehribar Gece</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="cyber-violet">
+                <span class="theme-preview-dots"><span style="background:#0f0a1f"></span><span style="background:#c084fc"></span></span>
+                <span>Siber Mor</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="nordic-frost">
+                <span class="theme-preview-dots"><span style="background:#121922"></span><span style="background:#60a5fa"></span></span>
+                <span>Kuzey Mavisi</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="paper-light">
+                <span class="theme-preview-dots"><span style="background:#ffffff"></span><span style="background:#0284c7"></span></span>
+                <span>Klasik Kağıt</span>
+              </button>
+              <button type="button" class="theme-option-btn" data-theme-id="warm-sepia">
+                <span class="theme-preview-dots"><span style="background:#f7efe0"></span><span style="background:#b45309"></span></span>
+                <span>Sıcak Sepya</span>
+              </button>
+            </div>
+
+            <p class="theme-popover-title">Vurgu Rengi (Accent)</p>
+            <div class="accent-swatches-row" id="accent-swatches-row">
+              <button type="button" class="ui-accent-swatch" data-accent="#38bdf8" style="background:#38bdf8" title="Gök Mavisi"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#10b981" style="background:#10b981" title="Zümrüt"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#a855f7" style="background:#a855f7" title="Mor"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#f59e0b" style="background:#f59e0b" title="Kehribar"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#f43f5e" style="background:#f43f5e" title="Mercan"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#14b8a6" style="background:#14b8a6" title="Turkuaz"></button>
+              <button type="button" class="ui-accent-swatch" data-accent="#6366f1" style="background:#6366f1" title="İndigo"></button>
+              <input type="color" id="custom-accent-picker" value="#38bdf8" title="Özel Vurgu Rengi Seç" />
+            </div>
+          </div>
+        </div>
+
         <button id="btn-toggle-ai" class="pill-btn accent-btn" title="Gemini Çalışma Asistanı">✨ Asistan</button>
       </div>
     </header>
