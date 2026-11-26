@@ -1,7 +1,7 @@
 /**
  * Odak Not — Ana Uygulama Denetleyicisi
- * S Pen yan tuş durum makinesi, getCoalescedEvents yüksek hassasiyetli örnekleme
- * ve pagehide/visibilitychange güvenli saveNow() kayıt mimarisi içerir.
+ * 8 Renkli Tema + Dinamik Vurgu Rengi (--accent-rgb), S Pen yan tuş durum makinesi,
+ * getCoalescedEvents yüksek hassasiyetli örnekleme ve pagehide/visibilitychange güvenli saveNow() mimarisi.
  */
 (async function () {
   const storage = new OdakStorage();
@@ -44,6 +44,120 @@
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 
+  // =========================================================================
+  // 8 Renkli Tema & Dinamik Vurgu Rengi (Accent Color) Yöneticisi
+  // =========================================================================
+  const THEME_DEFAULT_ACCENTS = {
+    'midnight': '#38bdf8',
+    'obsidian': '#a855f7',
+    'emerald-forest': '#10b981',
+    'sunset-amber': '#f59e0b',
+    'cyber-violet': '#c084fc',
+    'nordic-frost': '#60a5fa',
+    'paper-light': '#0284c7',
+    'warm-sepia': '#b45309'
+  };
+
+  function hexToRgbTuple(hex) {
+    const clean = (hex || '').replace('#', '').trim();
+    if (clean.length !== 6) return '56, 189, 248';
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return `${r}, ${g}, ${b}`;
+  }
+
+  function applyAccentColor(hexColor, persist = true) {
+    if (!hexColor) return;
+    document.documentElement.style.setProperty('--accent', hexColor);
+    document.documentElement.style.setProperty('--accent-rgb', hexToRgbTuple(hexColor));
+
+    const customPicker = document.getElementById('custom-accent-picker');
+    if (customPicker) customPicker.value = hexColor;
+
+    document.querySelectorAll('.ui-accent-swatch').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.accent?.toLowerCase() === hexColor.toLowerCase());
+    });
+
+    if (persist) {
+      try {
+        localStorage.setItem('odak_ui_accent', hexColor);
+      } catch (_) {}
+    }
+  }
+
+  function applyUiTheme(themeId, resetAccentToThemeDefault = false) {
+    const validTheme = THEME_DEFAULT_ACCENTS[themeId] ? themeId : 'midnight';
+    document.documentElement.setAttribute('data-ui-theme', validTheme);
+
+    document.querySelectorAll('.theme-option-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.themeId === validTheme);
+    });
+
+    try {
+      localStorage.setItem('odak_ui_theme', validTheme);
+    } catch (_) {}
+
+    if (resetAccentToThemeDefault) {
+      applyAccentColor(THEME_DEFAULT_ACCENTS[validTheme], true);
+    } else {
+      const savedAccent = localStorage.getItem('odak_ui_accent');
+      applyAccentColor(savedAccent || THEME_DEFAULT_ACCENTS[validTheme], false);
+    }
+
+    // Tablet üst sistem çubuğu (status bar) rengini aktif temaya göre senkronize et
+    requestAnimationFrame(() => {
+      const surfaceBg = getComputedStyle(document.documentElement).getPropertyValue('--bg-surface').trim();
+      const metaTheme = document.getElementById('meta-theme-color');
+      if (metaTheme && surfaceBg) {
+        metaTheme.setAttribute('content', surfaceBg);
+      }
+    });
+  }
+
+  function initThemeSystem() {
+    const savedTheme = localStorage.getItem('odak_ui_theme') || 'midnight';
+    applyUiTheme(savedTheme, false);
+
+    const btnTheme = document.getElementById('btn-theme');
+    const popover = document.getElementById('theme-popover');
+
+    btnTheme?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      popover?.classList.toggle('hidden');
+      btnTheme.classList.toggle('active', !popover?.classList.contains('hidden'));
+    });
+
+    document.addEventListener('click', (e) => {
+      const wrapper = document.getElementById('theme-picker-wrapper');
+      if (wrapper && !wrapper.contains(e.target)) {
+        popover?.classList.add('hidden');
+        btnTheme?.classList.remove('active');
+      }
+    });
+
+    document.querySelectorAll('.theme-option-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        applyUiTheme(btn.dataset.themeId, true);
+      });
+    });
+
+    document.querySelectorAll('.ui-accent-swatch').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        applyAccentColor(btn.dataset.accent, true);
+      });
+    });
+
+    document.getElementById('custom-accent-picker')?.addEventListener('input', (e) => {
+      applyAccentColor(e.target.value, true);
+    });
+  }
+
+  initThemeSystem();
+
+  // =========================================================================
+  // Yardımcı & Veri Fonksiyonları
+  // =========================================================================
   function setStatusText(id, text) {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
@@ -76,7 +190,7 @@
               type: 'sticky',
               x: 44,
               y: 44,
-              content: '📌 Hoş geldin Meriç! S Pen yan tuşuna basılı tutarak anında silgiye geçebilir, Kement (⬡) ile çizimlerini taşıyabilir veya üstten PDF yükleyebilirsin.'
+              content: '📌 Hoş geldin Meriç! Üstteki 🎨 Tema butonundan 8 renkli tema ve vurgu rengini seçebilir, S Pen yan tuşuyla anında silgiye geçebilirsin.'
             },
             {
               id: 'card_welcome_2',
@@ -154,7 +268,6 @@
     }, delayMs);
   }
 
-  // Sekme gizlendiğinde, uygulama arka plana atıldığında veya sayfa kapanırken veriyi anında yaz
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       saveNow(true);
@@ -167,7 +280,7 @@
     if (appState.isDirty) saveNow(true);
   });
 
-  // S Pen Yan Tuş (Barrel Button) Durum Makinesi (Havada ve Temasta Senkronize)
+  // S Pen Yan Tuş (Barrel Button) Durum Makinesi
   function setActiveToolUI(toolName) {
     appState.tool = toolName;
     document.querySelectorAll('.tool-btn').forEach((b) => {
@@ -177,7 +290,6 @@
 
   function syncBarrelButtonState(e) {
     if (e.pointerType !== 'pen') return;
-    // W3C Pointer Events: S Pen yan tuşu basılıyken buttons bitmask 32 (veya 2) ya da button === 5 olur
     const isBarrelPressed = (e.buttons & 32) === 32 || (e.buttons & 2) === 2 || e.button === 5;
 
     if (isBarrelPressed && !appState.barrelEraserActive) {
@@ -587,14 +699,6 @@
       renderSidebar();
       renderPages();
     }
-  });
-
-  // Tema Değiştirici
-  const themes = ['dark', 'light', 'sepia'];
-  document.getElementById('btn-theme')?.addEventListener('click', () => {
-    const cur = document.documentElement.dataset.theme || 'dark';
-    const next = themes[(themes.indexOf(cur) + 1) % themes.length];
-    document.documentElement.dataset.theme = next;
   });
 
   // Pomodoro Zamanlayıcı
