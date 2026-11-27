@@ -76,6 +76,60 @@
     -webkit-touch-callout: default !important;
     touch-action: manipulation !important;
   }
+
+  /* PDF Metin Seçimi Açıkken Katman Önceliği ve Doğal Seçim */
+  #stage.on-pdf-textsel .textLayer,
+  #stage.on-pdf-textsel .textLayer span,
+  #stage.on-pdf-textsel .textLayer div,
+  #stage.on-pdf-textsel .pdf-text,
+  #stage.on-pdf-textsel .pdfText {
+    pointer-events: auto !important;
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    -webkit-touch-callout: default !important;
+    cursor: text !important;
+  }
+  #stage.on-pdf-textsel #hlCanvas,
+  #stage.on-pdf-textsel #inkCanvas,
+  #stage.on-pdf-textsel #liveCanvas {
+    pointer-events: none !important;
+  }
+
+  /* Sağ Tık / Uzun Basış Yapıştır Menüsü */
+  #onCtxPasteMenu {
+    position: fixed;
+    z-index: 99999;
+    background: #131824;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 5px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 175px;
+  }
+  #onCtxPasteMenu[hidden] { display: none !important; }
+  #onCtxPasteMenu button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: none;
+    color: #f1f5f9;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    text-align: left;
+  }
+  #onCtxPasteMenu button:hover,
+  #onCtxPasteMenu button:active {
+    background: rgba(59, 130, 246, 0.24);
+    color: #93c5fd;
+  }
+
   .key-box {
     display: flex;
     flex-direction: column;
@@ -240,6 +294,11 @@
       <div id="toast" role="status" aria-live="polite"></div>
     </div>
   </main>
+</div>
+
+<div id="onCtxPasteMenu" data-ui hidden>
+  <button type="button" id="ctxPasteBtn">📋 Panodan Yapıştır</button>
+  <button type="button" id="ctxCopySelBtn" hidden>📄 Seçili Metni Kopyala</button>
 </div>
 
 <div class="modal" id="newNbDlg" role="dialog" aria-modal="true" aria-labelledby="newNbT">
@@ -465,24 +524,44 @@ function prettifyMathText(raw) {
   };
 
   let out = raw;
-  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '
-' + convertExpr(inner) + '
-');
-  out = out.replace(/(?<!\$)\$(?!\$)([^$
-]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
-  return out.replace(/
-{3,}/g, '
-
-').trim();
+  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
+  out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
+  return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 window.prettifyMathText = prettifyMathText;
 
 document.addEventListener('DOMContentLoaded', () => {
   const appNs = window.ON || (window.ON = {});
 
+  const copyPlainTextSafe = async rawText => {
+    const clean = prettifyMathText(String(rawText || ''));
+    if (!clean.trim()) return false;
+    try {
+      await navigator.clipboard.writeText(clean);
+      return true;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = clean;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch {}
+      ta.remove();
+      return ok;
+    }
+  };
+
   const isTextEditable = el => {
     if (!el || typeof el.closest !== 'function') return false;
     return !!el.closest('input, textarea, [contenteditable], #worldTop [contenteditable], #worldTop textarea, #worldTop input, .txt-box, .text-box, .note-txt, .snote-b, .card-txt');
+  };
+
+  const isPdfTextNode = el => {
+    if (!el || typeof el.closest !== 'function') return false;
+    return !!el.closest('.textLayer, .pdf-text, .pdfText, #world span, #world p');
   };
 
   const insertTextIntoEditable = (el, text) => {
@@ -504,8 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const range = sel.getRangeAt(0);
         if (ed.contains(range.commonAncestorContainer)) {
           range.deleteContents();
-          const lines = text.split('
-');
+          const lines = text.split('\n');
           const frag = document.createDocumentFragment();
           lines.forEach((line, i) => {
             if (i > 0) frag.appendChild(document.createElement('br'));
@@ -524,6 +602,219 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  const spawnPastedImageOnCanvas = (blobOrDataUrl, clientX = null, clientY = null) => {
+    const wt = document.getElementById('worldTop');
+    if (!wt) return;
+    const renderImg = src => {
+      const r = wt.getBoundingClientRect();
+      const s = wt.offsetWidth ? (r.width / wt.offsetWidth) : 1;
+      const scale = s > 0.05 ? s : 1;
+      const stageR = document.getElementById('stage')?.getBoundingClientRect() || r;
+      const cx = clientX ?? (stageR.left + stageR.width * 0.42);
+      const cy = clientY ?? (stageR.top + stageR.height * 0.36);
+      const wx = Math.max(20, (cx - r.left) / scale);
+      const wy = Math.max(20, (cy - r.top) / scale);
+
+      const box = document.createElement('div');
+      box.className = 'pt-widget selected';
+      box.style.left = wx + 'px';
+      box.style.top = wy + 'px';
+      box.style.zIndex = '55';
+
+      let curW = 300;
+      const ctrl = document.createElement('div');
+      ctrl.className = 'pt-w-ctrl';
+      ctrl.innerHTML = `
+        <button type="button" data-act="inc" title="Büyüt">+</button>
+        <button type="button" data-act="dec" title="Küçült">−</button>
+        <button type="button" data-act="del" class="del" title="Sil">×</button>
+      `;
+
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = 'Yapıştırılan Görsel';
+      img.style.width = curW + 'px';
+      img.style.height = 'auto';
+      img.style.display = 'block';
+      img.style.borderRadius = '8px';
+      img.style.border = '1.5px solid rgba(96,165,250,0.5)';
+      img.style.boxShadow = '0 8px 24px rgba(0,0,0,0.45)';
+      img.draggable = false;
+
+      ctrl.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const act = ev.target.closest('button')?.dataset.act;
+        if (act === 'inc') {
+          curW = Math.round(curW * 1.2);
+          img.style.width = curW + 'px';
+        } else if (act === 'dec') {
+          curW = Math.max(80, Math.round(curW * 0.82));
+          img.style.width = curW + 'px';
+        } else if (act === 'del') {
+          box.remove();
+        }
+      });
+
+      let dragging = false, sx = 0, sy = 0, ol = 0, ot = 0;
+      box.addEventListener('pointerdown', ev => {
+        if (ev.target.closest('button')) return;
+        ev.stopPropagation();
+        dragging = true;
+        sx = ev.clientX;
+        sy = ev.clientY;
+        ol = parseFloat(box.style.left) || 0;
+        ot = parseFloat(box.style.top) || 0;
+        box.setPointerCapture?.(ev.pointerId);
+      });
+      box.addEventListener('pointermove', ev => {
+        if (!dragging) return;
+        ev.stopPropagation();
+        const sc = wt.offsetWidth ? (wt.getBoundingClientRect().width / wt.offsetWidth) : 1;
+        box.style.left = (ol + (ev.clientX - sx) / (sc || 1)) + 'px';
+        box.style.top = (ot + (ev.clientY - sy) / (sc || 1)) + 'px';
+      });
+      const stopDrag = ev => {
+        if (!dragging) return;
+        dragging = false;
+        try { box.releasePointerCapture?.(ev.pointerId); } catch {}
+      };
+      box.addEventListener('pointerup', stopDrag);
+      box.addEventListener('pointercancel', stopDrag);
+
+      box.appendChild(ctrl);
+      box.appendChild(img);
+      wt.appendChild(box);
+      appNs.app?.toast?.('Görsel sayfaya yapıştırıldı');
+    };
+
+    if (typeof blobOrDataUrl === 'string') {
+      renderImg(blobOrDataUrl);
+    } else if (blobOrDataUrl instanceof Blob) {
+      const reader = new FileReader();
+      reader.onload = () => { if (typeof reader.result === 'string') renderImg(reader.result); };
+      reader.readAsDataURL(blobOrDataUrl);
+    }
+  };
+
+  const spawnPastedTextCardOnCanvas = (rawText, clientX = null, clientY = null) => {
+    const wt = document.getElementById('worldTop');
+    if (!wt || !rawText.trim()) return;
+    const clean = prettifyMathText(rawText);
+    const r = wt.getBoundingClientRect();
+    const s = wt.offsetWidth ? (r.width / wt.offsetWidth) : 1;
+    const scale = s > 0.05 ? s : 1;
+    const stageR = document.getElementById('stage')?.getBoundingClientRect() || r;
+    const cx = clientX ?? (stageR.left + stageR.width * 0.42);
+    const cy = clientY ?? (stageR.top + stageR.height * 0.36);
+    const wx = Math.max(20, (cx - r.left) / scale);
+    const wy = Math.max(20, (cy - r.top) / scale);
+
+    const card = document.createElement('div');
+    card.className = 'pt-sol-card';
+    card.style.left = wx + 'px';
+    card.style.top = wy + 'px';
+    card.style.zIndex = '55';
+    card.innerHTML = `
+      <div class="pt-sol-hdr">
+        <span>📋 Yapıştırılan Metin</span>
+        <button type="button" class="pt-close" title="Kapat">×</button>
+      </div>
+      <div class="pt-sol-body" contenteditable="true"></div>
+    `;
+    const bodyEl = card.querySelector('.pt-sol-body');
+    bodyEl.textContent = clean;
+    bindEditableElement(bodyEl);
+
+    card.querySelector('.pt-close').addEventListener('click', e => {
+      e.stopPropagation();
+      card.remove();
+    });
+
+    let dragging = false, sx = 0, sy = 0, ol = 0, ot = 0;
+    card.addEventListener('pointerdown', ev => {
+      if (ev.target.closest('button, [contenteditable="true"]')) return;
+      ev.stopPropagation();
+      dragging = true;
+      sx = ev.clientX;
+      sy = ev.clientY;
+      ol = parseFloat(card.style.left) || 0;
+      ot = parseFloat(card.style.top) || 0;
+      card.setPointerCapture?.(ev.pointerId);
+    });
+    card.addEventListener('pointermove', ev => {
+      if (!dragging) return;
+      ev.stopPropagation();
+      const sc = wt.offsetWidth ? (wt.getBoundingClientRect().width / wt.offsetWidth) : 1;
+      card.style.left = (ol + (ev.clientX - sx) / (sc || 1)) + 'px';
+      card.style.top = (ot + (ev.clientY - sy) / (sc || 1)) + 'px';
+    });
+    const stopDrag = ev => {
+      if (!dragging) return;
+      dragging = false;
+      try { card.releasePointerCapture?.(ev.pointerId); } catch {}
+    };
+    card.addEventListener('pointerup', stopDrag);
+    card.addEventListener('pointercancel', stopDrag);
+
+    wt.appendChild(card);
+    appNs.app?.toast?.('Metin sayfaya yapıştırıldı');
+  };
+
+  const pasteFromClipboardUniversal = async (targetEl = null, clientX = null, clientY = null) => {
+    const editableTarget = isTextEditable(targetEl)
+      ? targetEl
+      : (isTextEditable(document.activeElement) ? document.activeElement : null);
+
+    if (navigator.clipboard?.read) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imgType = item.types.find(t => t.startsWith('image/'));
+          if (imgType) {
+            const blob = await item.getType(imgType);
+            spawnPastedImageOnCanvas(blob, clientX, clientY);
+            return true;
+          }
+        }
+        for (const item of items) {
+          if (item.types.includes('text/plain')) {
+            const blob = await item.getType('text/plain');
+            const raw = await blob.text();
+            if (raw.trim()) {
+              const clean = prettifyMathText(raw);
+              if (editableTarget) {
+                insertTextIntoEditable(editableTarget, clean);
+                appNs.app?.toast?.('Metin yapıştırıldı');
+              } else {
+                spawnPastedTextCardOnCanvas(clean, clientX, clientY);
+              }
+              return true;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    if (navigator.clipboard?.readText) {
+      try {
+        const raw = await navigator.clipboard.readText();
+        if (raw && raw.trim()) {
+          const clean = prettifyMathText(raw);
+          if (editableTarget) {
+            insertTextIntoEditable(editableTarget, clean);
+            appNs.app?.toast?.('Metin yapıştırıldı');
+          } else {
+            spawnPastedTextCardOnCanvas(clean, clientX, clientY);
+          }
+          return true;
+        }
+      } catch {}
+    }
+
+    appNs.app?.toast?.('Pano izni için Ctrl+V kullanın veya kutuya basılı tutup Yapıştır seçin');
+    return false;
+  };
+
   const bindEditableElement = el => {
     if (!el || el.dataset.pasteBound === '1') return;
     el.dataset.pasteBound = '1';
@@ -537,6 +828,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     el.addEventListener('paste', e => {
       e.stopPropagation();
+      const items = [...(e.clipboardData?.items || [])];
+      const imgItem = items.find(it => it.type.startsWith('image/'));
+      if (imgItem) {
+        e.preventDefault();
+        const blob = imgItem.getAsFile();
+        if (blob) spawnPastedImageOnCanvas(blob);
+        return;
+      }
       const clip = e.clipboardData?.getData('text/plain');
       if (!clip) return;
       const clean = prettifyMathText(clip);
@@ -548,6 +847,153 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   document.querySelectorAll('input, textarea, [contenteditable]').forEach(bindEditableElement);
+
+  // Global Yapıştır (Ctrl+V / Sistem Yapıştır / Ekran Görüntüsü Yapıştırma)
+  document.addEventListener('paste', e => {
+    if (isTextEditable(e.target)) return;
+    const items = [...(e.clipboardData?.items || [])];
+    const imgItem = items.find(it => it.type.startsWith('image/'));
+    if (imgItem) {
+      e.preventDefault();
+      e.stopPropagation();
+      const blob = imgItem.getAsFile();
+      if (blob) spawnPastedImageOnCanvas(blob);
+      return;
+    }
+    const txt = e.clipboardData?.getData('text/plain');
+    if (txt && txt.trim()) {
+      e.preventDefault();
+      e.stopPropagation();
+      spawnPastedTextCardOnCanvas(txt);
+    }
+  }, { capture: true });
+
+  // Sayfa Üzerine Uzun Basış veya Sağ Tık ile "Panodan Yapıştır" Menüsü
+  const ctxMenu = document.getElementById('onCtxPasteMenu');
+  const ctxPasteBtn = document.getElementById('ctxPasteBtn');
+  const ctxCopySelBtn = document.getElementById('ctxCopySelBtn');
+  let lastCtxPos = { x: 200, y: 200, target: null };
+
+  const openCtxPasteMenu = (x, y, targetEl) => {
+    if (!ctxMenu) return;
+    lastCtxPos = { x, y, target: targetEl };
+    const selTxt = (window.getSelection()?.toString() || '').trim();
+    if (ctxCopySelBtn) ctxCopySelBtn.hidden = !selTxt;
+    ctxMenu.hidden = false;
+    const mw = 185;
+    const mh = selTxt ? 88 : 48;
+    ctxMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - mw - 8)) + 'px';
+    ctxMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - mh - 8)) + 'px';
+  };
+
+  ctxPasteBtn?.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (ctxMenu) ctxMenu.hidden = true;
+    await pasteFromClipboardUniversal(lastCtxPos.target, lastCtxPos.x, lastCtxPos.y);
+  });
+
+  ctxCopySelBtn?.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (ctxMenu) ctxMenu.hidden = true;
+    const selTxt = (window.getSelection()?.toString() || '').trim();
+    if (selTxt && await copyPlainTextSafe(selTxt)) {
+      appNs.app?.toast?.('Seçili metin kopyalandı');
+    }
+  });
+
+  document.addEventListener('pointerdown', e => {
+    if (ctxMenu && !ctxMenu.hidden && !ctxMenu.contains(e.target)) {
+      ctxMenu.hidden = true;
+    }
+  }, { capture: true });
+
+  const stageEl = document.getElementById('stage');
+  let longPressTimer = null, lpX = 0, lpY = 0;
+
+  stageEl?.addEventListener('pointerdown', e => {
+    if (e.target.closest('[data-ui], .pt-tape, .pt-widget, .pt-sol-card')) return;
+    if (e.pointerType === 'pen' && !(e.buttons & 2) && !(e.buttons & 32)) return;
+    lpX = e.clientX;
+    lpY = e.clientY;
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      const selTxt = (window.getSelection()?.toString() || '').trim();
+      if (!selTxt) {
+        openCtxPasteMenu(lpX, lpY, e.target);
+      }
+    }, 520);
+  }, { passive: true });
+
+  stageEl?.addEventListener('pointermove', e => {
+    if (longPressTimer && Math.hypot(e.clientX - lpX, e.clientY - lpY) > 12) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }, { passive: true });
+
+  const cancelLongPress = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+  stageEl?.addEventListener('pointerup', cancelLongPress, { passive: true });
+  stageEl?.addEventListener('pointercancel', cancelLongPress, { passive: true });
+
+  // PDF Metin Seçim Modu Senkronizasyonu ve Kopyalama Garantisi
+  const syncTextSelMode = () => {
+    const isTextSel = document.querySelector('#toolBtns [data-tool="textsel"]')?.classList.contains('on');
+    stageEl?.classList.toggle('on-pdf-textsel', !!isTextSel);
+  };
+  document.getElementById('toolBtns')?.addEventListener('click', () => setTimeout(syncTextSelMode, 0));
+  syncTextSelMode();
+
+  const selMenuEl = document.getElementById('selMenu');
+  let cachedPdfSelection = '';
+
+  const captureCurrentSelection = () => {
+    const s = (window.getSelection()?.toString() || '').trim();
+    if (s) cachedPdfSelection = s;
+  };
+  document.addEventListener('selectionchange', captureCurrentSelection);
+  stageEl?.addEventListener('pointerup', () => setTimeout(captureCurrentSelection, 20), { capture: true });
+
+  selMenuEl?.querySelector('[data-sel="copy"]')?.addEventListener('click', async e => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const txt = (window.getSelection()?.toString() || '').trim() || cachedPdfSelection;
+    if (!txt) {
+      appNs.app?.toast?.('Önce PDF üzerinden metin seçin');
+      return;
+    }
+    const ok = await copyPlainTextSafe(txt);
+    if (ok) {
+      appNs.app?.toast?.('PDF metni kopyalandı');
+      selMenuEl.hidden = true;
+    }
+  }, { capture: true });
+
+  // Araç Çubuğu "Ekle" (insert) Menüsüne Doğrudan "Panodan Yapıştır" Seçeneği Ekle
+  const toolPop = document.getElementById('toolPop');
+  const injectInsertPasteOption = () => {
+    if (!toolPop || toolPop.hidden) return;
+    const isInsertOpen = document.querySelector('#toolBtns [data-tool="insert"]')?.classList.contains('on');
+    if (!isInsertOpen || toolPop.querySelector('#onInsertPasteBtn')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'onInsertPasteBtn';
+    btn.className = 'btn wide';
+    btn.style.marginTop = '6px';
+    btn.textContent = '📋 Panodan Yapıştır (Görsel / Metin)';
+    btn.addEventListener('click', async () => {
+      toolPop.hidden = true;
+      await pasteFromClipboardUniversal(null);
+    });
+    toolPop.appendChild(btn);
+  };
+  if (toolPop) {
+    new MutationObserver(injectInsertPasteOption).observe(toolPop, { attributes: true, childList: true });
+  }
 
   const worldTop = document.getElementById('worldTop');
   const outEl = document.getElementById('out');
@@ -581,8 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('copyOut')?.addEventListener('click', () => {
     const txt = outEl?.innerText || outEl?.textContent || '';
     if (!txt.trim()) return;
-    const clean = prettifyMathText(txt);
-    navigator.clipboard?.writeText(clean).catch(() => {});
+    copyPlainTextSafe(txt);
   }, { capture: true });
 
   document.getElementById('pinOut')?.addEventListener('click', () => {
@@ -622,13 +1067,7 @@ document.addEventListener('DOMContentLoaded', () => {
       appNs.app?.toast?.('Kopyalanacak anahtar yok');
       return;
     }
-    try {
-      await navigator.clipboard.writeText(val);
-      appNs.app?.toast?.('API anahtarı panoya kopyalandı');
-    } catch {
-      keyIn.focus();
-      keyIn.select();
-      try { document.execCommand('copy'); } catch {}
+    if (await copyPlainTextSafe(val)) {
       appNs.app?.toast?.('API anahtarı panoya kopyalandı');
     }
   });
@@ -1250,11 +1689,15 @@ document.addEventListener('DOMContentLoaded', () => {
   window.addEventListener('pointercancel', onPenUp, { capture: true });
 
   window.addEventListener('contextmenu', e => {
-    if (isTextEditable(e.target)) return;
-    if (getSpenAct() === 'none') return;
-    e.preventDefault();
-    if (!barrelDown) {
-      handleBarrelDown('contextmenu');
+    if (isTextEditable(e.target) || isPdfTextNode(e.target)) return;
+    if (e.pointerType === 'pen' && getSpenAct() !== 'none') {
+      e.preventDefault();
+      if (!barrelDown) handleBarrelDown('contextmenu');
+      return;
+    }
+    if (e.target.closest('#stage') && !e.target.closest('[data-ui]')) {
+      e.preventDefault();
+      openCtxPasteMenu(e.clientX, e.clientY, e.target);
     }
   }, { capture: true });
 });
@@ -2476,8 +2919,7 @@ document.addEventListener('DOMContentLoaded', () => {
           e.stopPropagation();
           spawnSolutionCard({
             title: `🗂️ ${fc.term}`,
-            htmlBody: fc.def.replace(/
-/g, '<br>')
+            htmlBody: fc.def.replace(/\n/g, '<br>')
           });
           document.getElementById('studyDlg')?.classList.remove('open');
           toast('Terim kartı tuvale sabitlendi');
@@ -2534,8 +2976,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(d => {
               const out = d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
               if (out) {
-                const lines = out.split('
-').filter(Boolean);
+                const lines = out.split('\n').filter(Boolean);
                 entry.def = lines[0] || out;
                 entry.extra = lines.slice(1).join(' ');
                 saveFlashcards();
