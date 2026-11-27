@@ -432,30 +432,30 @@ function prettifyMathText(raw) {
 
   const convertExpr = expr => {
     let t = String(expr || '').trim();
-    t = t.replace(/\\text\{([^}]*)\}|\\mathrm\{([^}]*)\}|\\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
-    t = t.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
-    t = t.replace(/\\sqrt\{([^{}]+)\}/g, '√($1)');
-    t = t.replace(/\\left|\\right/g, '');
-    t = t.replace(/\\times|\\cdot/g, '×');
-    t = t.replace(/\\div/g, '÷');
-    t = t.replace(/\\pm/g, '±');
-    t = t.replace(/\\mp/g, '∓');
-    t = t.replace(/\\approx/g, '≈');
-    t = t.replace(/\\neq|\\ne/g, '≠');
-    t = t.replace(/\\leq|\\le/g, '≤');
-    t = t.replace(/\\geq|\\ge/g, '≥');
-    t = t.replace(/\\rightarrow|\\to/g, '→');
-    t = t.replace(/\\Rightarrow/g, '⇒');
-    t = t.replace(/\\infty/g, '∞');
-    t = t.replace(/\\sum/g, '∑');
-    t = t.replace(/\\int/g, '∫');
-    t = t.replace(/\\prod/g, '∏');
-    t = t.replace(/\\partial/g, '∂');
-    t = t.replace(/\\nabla/g, '∇');
-    t = t.replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\gamma/g, 'γ').replace(/\\delta/g, 'δ');
-    t = t.replace(/\\Delta/g, 'Δ').replace(/\\Theta/g, 'Θ').replace(/\\theta/g, 'θ').replace(/\\lambda/g, 'λ');
-    t = t.replace(/\\mu/g, 'μ').replace(/\\pi/g, 'π').replace(/\\rho/g, 'ρ').replace(/\\sigma/g, 'σ').replace(/\\Sigma/g, 'Σ');
-    t = t.replace(/\\tau/g, 'τ').replace(/\\phi/g, 'φ').replace(/\\Phi/g, 'Φ').replace(/\\omega/g, 'ω').replace(/\\Omega/g, 'Ω');
+    t = t.replace(/\text\{([^}]*)\}|\mathrm\{([^}]*)\}|\mathbf\{([^}]*)\}/g, (_, a, b, c) => (a || b || c || ''));
+    t = t.replace(/\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1)/($2)');
+    t = t.replace(/\sqrt\{([^{}]+)\}/g, '√($1)');
+    t = t.replace(/\left|\right/g, '');
+    t = t.replace(/\times|\cdot/g, '×');
+    t = t.replace(/\div/g, '÷');
+    t = t.replace(/\pm/g, '±');
+    t = t.replace(/\mp/g, '∓');
+    t = t.replace(/\approx/g, '≈');
+    t = t.replace(/\neq|\ne/g, '≠');
+    t = t.replace(/\leq|\le/g, '≤');
+    t = t.replace(/\geq|\ge/g, '≥');
+    t = t.replace(/\rightarrow|\to/g, '→');
+    t = t.replace(/\Rightarrow/g, '⇒');
+    t = t.replace(/\infty/g, '∞');
+    t = t.replace(/\sum/g, '∑');
+    t = t.replace(/\int/g, '∫');
+    t = t.replace(/\prod/g, '∏');
+    t = t.replace(/\partial/g, '∂');
+    t = t.replace(/\nabla/g, '∇');
+    t = t.replace(/\alpha/g, 'α').replace(/\beta/g, 'β').replace(/\gamma/g, 'γ').replace(/\delta/g, 'δ');
+    t = t.replace(/\Delta/g, 'Δ').replace(/\Theta/g, 'Θ').replace(/\theta/g, 'θ').replace(/\lambda/g, 'λ');
+    t = t.replace(/\mu/g, 'μ').replace(/\pi/g, 'π').replace(/\rho/g, 'ρ').replace(/\sigma/g, 'σ').replace(/\Sigma/g, 'Σ');
+    t = t.replace(/\tau/g, 'τ').replace(/\phi/g, 'φ').replace(/\Phi/g, 'Φ').replace(/\omega/g, 'ω').replace(/\Omega/g, 'Ω');
     t = t.replace(/\^\{([^{}]+)\}/g, (_, g) => toSup(g));
     t = t.replace(/\^([0-9a-zA-Z+-])/g, (_, g) => toSup(g));
     t = t.replace(/_\{([^{}]+)\}/g, (_, g) => toSub(g));
@@ -465,9 +465,15 @@ function prettifyMathText(raw) {
   };
 
   let out = raw;
-  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '\n' + convertExpr(inner) + '\n');
-  out = out.replace(/(?<!\$)\$(?!\$)([^$\n]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
-  return out.replace(/\n{3,}/g, '\n\n').trim();
+  out = out.replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) => '
+' + convertExpr(inner) + '
+');
+  out = out.replace(/(?<!\$)\$(?!\$)([^$
+]+?)\$(?!\$)/g, (_, inner) => convertExpr(inner));
+  return out.replace(/
+{3,}/g, '
+
+').trim();
 }
 window.prettifyMathText = prettifyMathText;
 
@@ -498,7 +504,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const range = sel.getRangeAt(0);
         if (ed.contains(range.commonAncestorContainer)) {
           range.deleteContents();
-          const lines = text.split('\n');
+          const lines = text.split('
+');
           const frag = document.createDocumentFragment();
           lines.forEach((line, i) => {
             if (i > 0) frag.appendChild(document.createElement('br'));
@@ -552,7 +559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let node;
     while ((node = walker.nextNode())) {
       if (node.parentElement?.closest?.('#onQuizApp, #onGraphWin, #onFcModal, .katex')) continue;
-      if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\\frac') || node.nodeValue.includes('\\times') || node.nodeValue.includes('\\cdot'))) {
+      if (node.nodeValue && (node.nodeValue.includes('$') || node.nodeValue.includes('\frac') || node.nodeValue.includes('\times') || node.nodeValue.includes('\cdot'))) {
         const cleaned = prettifyMathText(node.nodeValue);
         if (cleaned !== node.nodeValue) node.nodeValue = cleaned;
       }
@@ -1346,6 +1353,15 @@ document.addEventListener('DOMContentLoaded', () => {
         color: #60a5fa !important;
         box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.45);
       }
+      #stage.pt-tape-active,
+      #stage.pt-tape-active #world,
+      #stage.pt-tape-active #worldTop,
+      #stage.pt-tape-active canvas {
+        touch-action: none !important;
+      }
+      #stage.pt-tape-active #worldTop {
+        pointer-events: auto !important;
+      }
       #ptEngModal {
         position: fixed;
         top: 56px;
@@ -1507,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         box-shadow: 0 4px 12px rgba(0,0,0,.35);
         cursor: pointer;
         opacity: 0.97;
-        transition: opacity .18s, background .18s;
+        transition: opacity .18s, background .18s, border-color .15s, box-shadow .15s;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1515,27 +1531,44 @@ document.addEventListener('DOMContentLoaded', () => {
         font-size: 11px;
         font-weight: 600;
         touch-action: none;
+        pointer-events: auto !important;
+        user-select: none;
+        -webkit-user-select: none;
+        z-index: 40;
+      }
+      .pt-tape.selected {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45), 0 4px 12px rgba(0,0,0,.35);
       }
       .pt-tape.revealed {
-        opacity: 0.14;
+        opacity: 0.16;
       }
       .pt-tape-del {
         position: absolute;
-        top: -9px;
-        right: -9px;
-        width: 20px;
-        height: 20px;
+        top: -11px;
+        right: -11px;
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         background: #ef4444;
         color: #fff;
-        border: none;
-        font-size: 12px;
+        border: 2px solid #0f172a;
+        font-size: 15px;
+        font-weight: 700;
         line-height: 1;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        opacity: 0.9;
+        opacity: 0.98;
+        touch-action: none;
+        pointer-events: auto !important;
+        z-index: 45;
+        box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      }
+      .pt-tape-del:active {
+        transform: scale(0.92);
+        background: #dc2626;
       }
       #ptTapePreview {
         position: fixed;
@@ -1979,17 +2012,131 @@ document.addEventListener('DOMContentLoaded', () => {
     const wt = document.getElementById('worldTop');
     if (!stage || !wt) return;
 
-    let drawing = false, sx = 0, sy = 0, preview = null;
+    let drawing = false, activePointerId = null, sx = 0, sy = 0, preview = null;
 
-    stage.addEventListener('pointerdown', e => {
+    const findTapeAtPoint = (clientX, clientY) => {
+      const tapes = [...wt.querySelectorAll('.pt-tape')];
+      for (let i = tapes.length - 1; i >= 0; i--) {
+        const t = tapes[i];
+        const delBtn = t.querySelector('.pt-tape-del');
+        if (delBtn) {
+          const dr = delBtn.getBoundingClientRect();
+          if (clientX >= dr.left - 8 && clientX <= dr.right + 8 &&
+              clientY >= dr.top - 8 && clientY <= dr.bottom + 8) {
+            return { tape: t, isDelete: true };
+          }
+        }
+        const r = t.getBoundingClientRect();
+        if (clientX >= r.left - 4 && clientX <= r.right + 4 &&
+            clientY >= r.top - 4 && clientY <= r.bottom + 4) {
+          return { tape: t, isDelete: false };
+        }
+      }
+      return null;
+    };
+
+    const bindTapeElement = tape => {
+      if (!tape || tape.dataset.ptBound === '1') return;
+      tape.dataset.ptBound = '1';
+
+      const del = tape.querySelector('.pt-tape-del');
+      const removeTape = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        tape.remove();
+        toast('Örtü bandı silindi');
+      };
+
+      if (del) {
+        del.addEventListener('pointerdown', removeTape, { capture: true, passive: false });
+        del.addEventListener('touchstart', removeTape, { capture: true, passive: false });
+        del.addEventListener('click', removeTape, { capture: true });
+      }
+
+      let tapDownX = 0, tapDownY = 0, tapMoved = false;
+      tape.addEventListener('pointerdown', ev => {
+        if (ev.target.closest('.pt-tape-del')) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        tapDownX = ev.clientX;
+        tapDownY = ev.clientY;
+        tapMoved = false;
+        document.querySelectorAll('.pt-tape.selected').forEach(x => x.classList.remove('selected'));
+        tape.classList.add('selected');
+      }, { capture: true, passive: false });
+
+      tape.addEventListener('pointermove', ev => {
+        if (Math.hypot(ev.clientX - tapDownX, ev.clientY - tapDownY) > 10) {
+          tapMoved = true;
+        }
+      }, { capture: true });
+
+      tape.addEventListener('pointerup', ev => {
+        if (ev.target.closest('.pt-tape-del')) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation();
+        if (!tapMoved) {
+          tape.classList.toggle('revealed');
+        }
+      }, { capture: true, passive: false });
+    };
+
+    wt.querySelectorAll('.pt-tape').forEach(bindTapeElement);
+
+    const blockNativeTouchScroll = e => {
       if (!state.tapeMode) return;
-      if (e.target.closest('[data-ui], .pt-tape')) return;
+      if (e.target.closest('[data-ui]')) return;
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
+    };
+    stage.addEventListener('touchstart', blockNativeTouchScroll, { capture: true, passive: false });
+    stage.addEventListener('touchmove', blockNativeTouchScroll, { capture: true, passive: false });
+
+    stage.addEventListener('pointerdown', e => {
+      if (e.target.closest('[data-ui]')) return;
+
+      const hit = findTapeAtPoint(e.clientX, e.clientY);
+      if (hit) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        if (hit.isDelete) {
+          hit.tape.remove();
+          toast('Örtü bandı silindi');
+        } else {
+          document.querySelectorAll('.pt-tape.selected').forEach(x => x.classList.remove('selected'));
+          hit.tape.classList.add('selected');
+          hit.tape.classList.toggle('revealed');
+        }
+        return;
+      }
+
+      const activeTool = document.querySelector('#toolBtns [data-tool].on')?.dataset.tool;
+      if (activeTool === 'eraser' && e.isPrimary !== false) {
+        const erHit = findTapeAtPoint(e.clientX, e.clientY);
+        if (erHit) {
+          e.preventDefault();
+          e.stopPropagation();
+          erHit.tape.remove();
+          toast('Örtü bandı silindi');
+          return;
+        }
+      }
+
+      if (!state.tapeMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
       drawing = true;
+      activePointerId = e.pointerId;
       sx = e.clientX;
       sy = e.clientY;
+      preview?.remove();
       preview = document.createElement('div');
       preview.id = 'ptTapePreview';
       preview.style.left = sx + 'px';
@@ -1997,10 +2144,25 @@ document.addEventListener('DOMContentLoaded', () => {
       preview.style.width = '0px';
       preview.style.height = '0px';
       document.body.appendChild(preview);
-    }, { capture: true });
+      try { stage.setPointerCapture?.(e.pointerId); } catch {}
+    }, { capture: true, passive: false });
 
-    window.addEventListener('pointermove', e => {
+    const onTapeMove = e => {
+      const activeTool = document.querySelector('#toolBtns [data-tool].on')?.dataset.tool;
+      if (activeTool === 'eraser' && e.buttons > 0) {
+        const erHit = findTapeAtPoint(e.clientX, e.clientY);
+        if (erHit) {
+          erHit.tape.remove();
+          toast('Örtü bandı silindi');
+          return;
+        }
+      }
+
       if (!drawing || !preview) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       const x = Math.min(sx, e.clientX);
       const y = Math.min(sy, e.clientY);
       const w = Math.abs(e.clientX - sx);
@@ -2009,11 +2171,18 @@ document.addEventListener('DOMContentLoaded', () => {
       preview.style.top = y + 'px';
       preview.style.width = w + 'px';
       preview.style.height = h + 'px';
-    }, { capture: true });
+    };
 
-    window.addEventListener('pointerup', e => {
+    const finishTapeDraw = e => {
       if (!drawing) return;
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+
+      try { stage.releasePointerCapture?.(e.pointerId); } catch {}
       drawing = false;
+      activePointerId = null;
       preview?.remove();
       preview = null;
 
@@ -2027,7 +2196,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const p2 = clientToWorld(x2, y2);
 
       const tape = document.createElement('div');
-      tape.className = 'pt-tape';
+      tape.className = 'pt-tape selected';
       tape.style.left = p1.x + 'px';
       tape.style.top = p1.y + 'px';
       tape.style.width = Math.max(24, p2.x - p1.x) + 'px';
@@ -2037,20 +2206,19 @@ document.addEventListener('DOMContentLoaded', () => {
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'pt-tape-del';
+      del.title = 'Örtü bandını sil';
+      del.setAttribute('aria-label', 'Örtü bandını sil');
       del.textContent = '×';
-      del.addEventListener('click', ev => {
-        ev.stopPropagation();
-        tape.remove();
-      });
-
-      tape.addEventListener('click', ev => {
-        ev.stopPropagation();
-        tape.classList.toggle('revealed');
-      });
 
       tape.appendChild(del);
+      document.querySelectorAll('.pt-tape.selected').forEach(x => x.classList.remove('selected'));
       wt.appendChild(tape);
-    }, { capture: true });
+      bindTapeElement(tape);
+    };
+
+    window.addEventListener('pointermove', onTapeMove, { capture: true, passive: false });
+    window.addEventListener('pointerup', finishTapeDraw, { capture: true, passive: false });
+    window.addEventListener('pointercancel', finishTapeDraw, { capture: true, passive: false });
   };
 
   const captureStageImage = (cropRect = null) => {
@@ -2199,7 +2367,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const askGeminiVision = async (base64Png, promptText) => {
     const key = getApiKey();
     if (!key) {
-      toast('Önce Ayarlar\'dan Gemini API anahtarını gir');
+      toast('Önce Ayarlar'dan Gemini API anahtarını gir');
       document.getElementById('openSettings')?.click();
       return null;
     }
@@ -2308,7 +2476,8 @@ document.addEventListener('DOMContentLoaded', () => {
           e.stopPropagation();
           spawnSolutionCard({
             title: `🗂️ ${fc.term}`,
-            htmlBody: fc.def.replace(/\n/g, '<br>')
+            htmlBody: fc.def.replace(/
+/g, '<br>')
           });
           document.getElementById('studyDlg')?.classList.remove('open');
           toast('Terim kartı tuvale sabitlendi');
@@ -2365,7 +2534,8 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(d => {
               const out = d?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
               if (out) {
-                const lines = out.split('\n').filter(Boolean);
+                const lines = out.split('
+').filter(Boolean);
                 entry.def = lines[0] || out;
                 entry.extra = lines.slice(1).join(' ');
                 saveFlashcards();
@@ -2548,6 +2718,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tapeBtn.addEventListener('click', () => {
       state.tapeMode = !state.tapeMode;
       tapeBtn.classList.toggle('active', state.tapeMode);
+      stage?.classList.toggle('pt-tape-active', state.tapeMode);
       toast(state.tapeMode ? '🩹 Örtü bandı aktif: Kapatmak istediğiniz yerin üzerine sürükleyin' : 'Örtü bandı kapatıldı');
     });
 
@@ -2562,6 +2733,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('worldTop')?.addEventListener('pointerdown', e => {
       if (!e.target.closest('.pt-widget')) {
         document.querySelectorAll('.pt-widget.selected').forEach(w => w.classList.remove('selected'));
+      }
+      if (!e.target.closest('.pt-tape')) {
+        document.querySelectorAll('.pt-tape.selected').forEach(t => t.classList.remove('selected'));
       }
     });
 
